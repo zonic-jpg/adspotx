@@ -6,7 +6,7 @@
 # Day-to-day: pnpm ship  (or npm run ship)
 
 [build]
-  command = "node scripts/apply-adspot-sql.mjs && npx pnpm@9 install && npx pnpm@9 --filter @workspace/adspot-unified run build"
+  command = "bash scripts/netlify-build.sh"
   publish = "app/dist"
   functions = "netlify/functions"
 
