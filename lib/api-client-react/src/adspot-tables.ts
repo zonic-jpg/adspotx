@@ -1,6 +1,6 @@
 /**
  * Canonical AdSpot table names on the shared Zonic Supabase project.
- * Never use MyYanga public.ads / profiles / brands (broken RL3 / wrong schema).
+ * Never use MyYanga public.ads / profiles / brands (broken RLS / wrong schema).
  */
 export const ADSPOT_PROFILES = "adspot_profiles";
 export const ADSPOT_BRANDS = "adspot_brands";
