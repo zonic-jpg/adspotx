@@ -1,7 +1,17 @@
-import { supabase } from "./supabase-client";
+import { hasSupabase, supabase } from "./supabase-client";
 import { fetchProfile, invokeEdge, profileToUser } from "./supabase-auth";
 import { identityToEmail, isApproved, isOwnerEmail, isRevoked, isSharedAdminPassword } from "./admin-tester";
 import type { UserProfile } from "./generated/api.schemas";
+
+const MISSING_SUPABASE_MSG =
+  "Sign-in is unavailable — Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild/redeploy.";
+
+function requireSupabase() {
+  if (!hasSupabase || !supabase) {
+    throw Object.assign(new Error(MISSING_SUPABASE_MSG), { status: 503, code: "supabase_not_configured" });
+  }
+  return supabase;
+}
 
 export function postLoginPath(role: UserProfile["role"]): string {
   if (role === "reviewer") return "/earn/dashboard";
@@ -10,10 +20,11 @@ export function postLoginPath(role: UserProfile["role"]): string {
 }
 
 export async function supabaseLogin(email: string, password: string): Promise<{ user: UserProfile; token: string }> {
-  const sb = supabase!;
+  const sb = requireSupabase();
   const normEmail = identityToEmail(email);
+  const owner = isOwnerEmail(normEmail);
 
-  if (isSharedAdminPassword(password) && !isOwnerEmail(normEmail)) {
+  if (isSharedAdminPassword(password) && !owner) {
     if (isRevoked(normEmail)) throw Object.assign(new Error("Admin access was revoked."), { status: 403 });
     if (!isApproved(normEmail)) {
       throw Object.assign(new Error("Awaiting approval — the owner must approve your admin access."), {
@@ -24,7 +35,10 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   }
 
   const { data, error } = await sb.auth.signInWithPassword({ email: normEmail, password });
-  if (error) throw Object.assign(error, { status: 401 });
+  if (error) {
+    const msg = error.message || "Wrong email or password. Try again.";
+    throw Object.assign(new Error(msg), { status: 401, code: error.message });
+  }
   if (!data.session || !data.user) throw new Error("Sign in failed");
 
   const profile = await fetchProfile(data.user.id);
@@ -33,7 +47,8 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
     await sb.auth.signOut();
     throw new Error("Account suspended");
   }
-  if (profile.approval_status === "pending") {
+  // Owner is never pending; other admin-password accounts may be.
+  if (!owner && profile.approval_status === "pending") {
     await sb.auth.signOut();
     throw Object.assign(new Error("Awaiting approval"), { status: 403, code: "pending_approval" });
   }
@@ -48,7 +63,7 @@ export async function supabaseRegister(input: {
   role: "reviewer" | "brand";
   companyName?: string;
 }): Promise<{ user: UserProfile; token: string }> {
-  const sb = supabase!;
+  const sb = requireSupabase();
   const email = input.email.toLowerCase().trim();
   const { data, error } = await sb.auth.signUp({ email, password: input.password });
   if (error) throw error;

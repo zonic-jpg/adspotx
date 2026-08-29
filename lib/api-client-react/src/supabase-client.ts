@@ -26,8 +26,15 @@ if (isValidSupabaseUrl(url) && anon) {
     });
   } catch (err) {
     console.warn("[supabase] createClient failed:", (err as Error)?.message ?? err);
+    client = null;
   }
+} else if (typeof console !== "undefined" && (url || anon)) {
+  console.warn("[supabase] incomplete VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — auth disabled");
 }
 
 export const supabase = client;
 export const hasSupabase = !!supabase;
+export const supabaseConfigError =
+  hasSupabase
+    ? null
+    : "Supabase is not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).";

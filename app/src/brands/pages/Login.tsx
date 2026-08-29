@@ -4,13 +4,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@brands/contexts/AuthContext";
-import { supabaseLogin, postLoginPath } from "@workspace/api-client-react";
+import { supabaseLogin, postLoginPath, hasSupabase } from "@workspace/api-client-react";
 import { Button } from "@brands/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@brands/components/ui/form";
 import { Input } from "@brands/components/ui/input";
 import { Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
 import { isSharedAdminPassword, resolveAdminGateLogin, isOwnerEmail } from "../../lib/adminTesterApproval";
+
+const MISSING_SUPABASE_MSG =
+  "Sign-in is unavailable — Supabase is not configured on this deploy. Rebuild with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -42,6 +45,10 @@ export default function Login() {
 
   const onSubmit = async (values: LoginFormValues) => {
     setFormError(null);
+    if (!hasSupabase) {
+      setFormError(MISSING_SUPABASE_MSG);
+      return;
+    }
     if (isSharedAdminPassword(values.password)) {
       const gate = resolveAdminGateLogin(values.email, values.password, "adspotx");
       if (!gate.ok) {
@@ -57,9 +64,18 @@ export default function Login() {
         return;
       }
       setAuth(data.token, data.user);
-      setLocation(postLoginPath(data.user.role));
+      // Owner → approval queue; useEffect also redirects once context user is set.
+      if (isOwnerEmail(data.user.email ?? "") && (data.user.role === "admin" || data.user.role === "super_admin")) {
+        setLocation("/admin/dashboard#admintester-queue");
+      } else {
+        setLocation(postLoginPath(data.user.role));
+      }
     } catch (error: unknown) {
       const err = error as Error & { code?: string; status?: number };
+      if (err.code === "supabase_not_configured" || err.status === 503) {
+        setFormError(err.message || MISSING_SUPABASE_MSG);
+        return;
+      }
       if (err.code === "pending_approval" || err.status === 403) {
         setFormError(err.message || "Awaiting approval");
         return;

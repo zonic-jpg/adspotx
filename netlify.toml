@@ -11,9 +11,10 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # Set in Netlify UI or here:
-  # VITE_SUPABASE_URL = "https://YOUR_PROJECT.supabase.co"
-  # VITE_SUPABASE_ANON_KEY = "eyJ..."
+  # Public anon keys — bake into SPA (same Zonic Supabase project as MyYangaX).
+  # Override in Netlify UI if the project moves.
+  VITE_SUPABASE_URL = "https://bnfbgqtdwyiockkxvapp.supabase.co"
+  VITE_SUPABASE_ANON_KEY = "sb_publishable_9nU0w-V7QWrtqvuP2Iqihg_6Zsf2LSf"
 
 # Hero video function kept (static asset proxy)
 [[redirects]]
