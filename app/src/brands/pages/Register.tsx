@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,6 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@brands/components/ui/input";
 import { useToast } from "@brands/hooks/use-toast";
 import { RegisterRequestRole } from "@workspace/api-client-react";
+import { Eye, EyeOff } from "lucide-react";
 
 const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -25,6 +26,7 @@ export default function Register() {
   const { login: setAuth, user, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -126,7 +128,23 @@ export default function Register() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" {...field} data-testid="input-password" />
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          className="pr-10"
+                          {...field}
+                          data-testid="input-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          tabIndex={-1}
+                        >
+                          {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

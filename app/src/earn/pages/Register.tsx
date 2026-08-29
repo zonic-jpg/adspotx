@@ -11,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@earn/components/ui/radio-group";
 import { useToast } from "@earn/hooks/use-toast";
 import { useRegister, RegisterRequestRole, customFetch } from "@workspace/api-client-react";
 import { useAuth } from "@earn/contexts/AuthContext";
-import { Loader2, Star, Trophy, Zap, Building2, User, ChevronRight, MapPin, Briefcase, Users } from "lucide-react";
+import { Loader2, Star, Trophy, Zap, Building2, User, ChevronRight, MapPin, Briefcase, Users, Eye, EyeOff } from "lucide-react";
 
 const NIGERIAN_STATES = [
   "Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
@@ -59,6 +59,7 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const [step, setStep] = useState<Step>("account");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -87,7 +88,11 @@ export default function Register() {
         setStep("profile");
       },
       onError: (error: any) => {
-        toast({ variant: "destructive", title: "Registration failed", description: error.data?.message || "Problem creating your account. Try again." });
+        const msg =
+          error?.data?.message ||
+          error?.message ||
+          "Problem creating your account. Try again.";
+        toast({ variant: "destructive", title: "Registration failed", description: msg });
       },
     });
   }
@@ -248,7 +253,27 @@ export default function Register() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-[12px] font-black uppercase tracking-wider text-[#0f0f14]/60">Password</FormLabel>
-                      <FormControl><Input placeholder="Min. 8 characters" type="password" autoComplete="new-password" disabled={isLoading} className={INPUT_CLS} {...field} /></FormControl>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            placeholder="Min. 8 characters"
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="new-password"
+                            disabled={isLoading}
+                            className={`${INPUT_CLS} pr-11`}
+                            {...field}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#0f0f14]"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                            tabIndex={-1}
+                          >
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
+                      </FormControl>
                       <FormMessage className="text-[12px]" />
                     </FormItem>
                   )}

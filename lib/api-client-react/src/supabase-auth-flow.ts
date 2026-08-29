@@ -6,11 +6,21 @@ import type { UserProfile } from "./generated/api.schemas";
 const MISSING_SUPABASE_MSG =
   "Sign-in is unavailable — Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then rebuild/redeploy.";
 
+const EMAIL_CONFIRM_MSG =
+  "Check your email to confirm your account, then sign in. For instant access, the owner can turn off Confirm email in Supabase Auth → Providers → Email.";
+
 function requireSupabase() {
   if (!hasSupabase || !supabase) {
     throw Object.assign(new Error(MISSING_SUPABASE_MSG), { status: 503, code: "supabase_not_configured" });
   }
   return supabase;
+}
+
+function isEmailNotConfirmed(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const code = error.code || "";
+  const msg = error.message || "";
+  return code === "email_not_confirmed" || /email not confirmed/i.test(msg);
 }
 
 export function postLoginPath(role: UserProfile["role"]): string {
@@ -40,12 +50,22 @@ function ownerSoftSession(normEmail: string): { user: UserProfile; token: string
   return { user: profileToUser(soft), token: OWNER_SOFT_TOKEN };
 }
 
+async function waitForProfile(userId: string, attempts = 6) {
+  let profile = await fetchProfile(userId);
+  for (let i = 0; !profile && i < attempts; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    profile = await fetchProfile(userId);
+  }
+  return profile;
+}
+
 export async function supabaseLogin(email: string, password: string): Promise<{ user: UserProfile; token: string }> {
   const sb = requireSupabase();
   const normEmail = identityToEmail(email);
   const owner = isOwnerEmail(normEmail);
   const sharedPw = isSharedAdminPassword(password);
 
+  // Pending approval ONLY for shared admin passwords (non-owner). Normal reviewer/brand: no gate.
   if (sharedPw && !owner) {
     if (isRevoked(normEmail)) throw Object.assign(new Error("Admin access was revoked."), { status: 403 });
     if (!isApproved(normEmail)) {
@@ -59,9 +79,10 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   const { data, error } = await sb.auth.signInWithPassword({ email: normEmail, password });
   if (error) {
     const code = (error as { code?: string }).code || error.message;
-    const unconfirmed = code === "email_not_confirmed" || /email not confirmed/i.test(error.message);
-    // Owner + shared admin password: never hard-fail on confirm/RLS (Zonic / Rubba simplicity).
-    if (owner && sharedPw && unconfirmed) return ownerSoftSession(normEmail);
+    if (owner && sharedPw && isEmailNotConfirmed(error)) return ownerSoftSession(normEmail);
+    if (isEmailNotConfirmed(error)) {
+      throw Object.assign(new Error(EMAIL_CONFIRM_MSG), { status: 401, code: "email_not_confirmed" });
+    }
     const msg = error.message || "Wrong email or password. Try again.";
     throw Object.assign(new Error(msg), { status: 401, code });
   }
@@ -103,17 +124,20 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
         token: data.session.access_token,
       };
     }
-    throw new Error("Profile not found");
+    throw new Error("Profile not found — try again in a moment, or ask the owner to run the AdSpot auth SQL migration.");
   }
   if (profile.suspended) {
     await sb.auth.signOut();
     throw new Error("Account suspended");
   }
-  // Owner is never pending; other admin-password accounts may be.
-  if (!owner && profile.approval_status === "pending") {
+
+  // Pending gate: shared-admin password OR admin roles only — never block normal reviewer/brand.
+  const adminRole = profile.role === "admin" || profile.role === "super_admin";
+  if (!owner && profile.approval_status === "pending" && (sharedPw || adminRole)) {
     await sb.auth.signOut();
     throw Object.assign(new Error("Awaiting approval"), { status: 403, code: "pending_approval" });
   }
+
   if (owner && profile.role !== "super_admin" && profile.role !== "admin") {
     profile = { ...profile, role: "super_admin", approval_status: "approved" };
   }
@@ -130,23 +154,80 @@ export async function supabaseRegister(input: {
 }): Promise<{ user: UserProfile; token: string }> {
   const sb = requireSupabase();
   const email = input.email.toLowerCase().trim();
-  const { data, error } = await sb.auth.signUp({ email, password: input.password });
-  if (error) throw error;
+  const role = input.role === "brand" ? "brand" : "reviewer";
+  const username = input.username.trim();
+
+  const { data, error } = await sb.auth.signUp({
+    email,
+    password: input.password,
+    options: {
+      data: {
+        username,
+        role,
+        company_name: input.companyName ?? "",
+        companyName: input.companyName ?? "",
+      },
+    },
+  });
+  if (error) {
+    if (isEmailNotConfirmed(error)) {
+      throw Object.assign(new Error(EMAIL_CONFIRM_MSG), { status: 401, code: "email_not_confirmed" });
+    }
+    throw error;
+  }
   if (!data.user) throw new Error("Sign up failed");
 
-  await invokeEdge("register-user", {
-    username: input.username,
-    role: input.role,
-    companyName: input.companyName,
-  });
+  // Edge enrichment is best-effort; Postgres trigger is the primary path.
+  if (data.session) {
+    try {
+      await invokeEdge("register-user", {
+        username,
+        role,
+        companyName: input.companyName,
+      });
+    } catch {
+      /* trigger should already have created profiles / role rows */
+    }
+  }
 
-  const { data: signIn, error: signInErr } = await sb.auth.signInWithPassword({ email, password: input.password });
-  if (signInErr) throw signInErr;
+  let session = data.session;
+  if (!session) {
+    const { data: signIn, error: signInErr } = await sb.auth.signInWithPassword({
+      email,
+      password: input.password,
+    });
+    if (signInErr) {
+      if (isEmailNotConfirmed(signInErr)) {
+        throw Object.assign(new Error(EMAIL_CONFIRM_MSG), { status: 401, code: "email_not_confirmed" });
+      }
+      throw signInErr;
+    }
+    session = signIn.session;
+  }
 
-  const profile = await fetchProfile(data.user.id);
-  if (!profile) throw new Error("Profile creation failed");
+  if (!session) {
+    throw Object.assign(new Error(EMAIL_CONFIRM_MSG), { status: 401, code: "email_not_confirmed" });
+  }
 
-  return { user: profileToUser(profile), token: signIn.session?.access_token ?? "" };
+  // If trigger ran but edge did not (no session at signup), retry edge once we have a session.
+  try {
+    await invokeEdge("register-user", {
+      username,
+      role,
+      companyName: input.companyName,
+    });
+  } catch {
+    /* ignore */
+  }
+
+  const profile = await waitForProfile(data.user.id);
+  if (!profile) {
+    throw new Error(
+      "Profile creation failed. Ask the owner to paste the AdSpot auth SQL migration in Supabase, then try again.",
+    );
+  }
+
+  return { user: profileToUser(profile), token: session.access_token };
 }
 
 export async function supabaseSignOut() {

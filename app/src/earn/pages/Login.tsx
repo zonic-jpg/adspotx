@@ -9,7 +9,7 @@ import {
 import { Input } from "@earn/components/ui/input";
 import { useAuth } from "@earn/contexts/AuthContext";
 import { ApiError } from "@workspace/api-client-react";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
 
 const formSchema = z.object({
@@ -22,6 +22,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [wrongPortal, setWrongPortal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -121,14 +122,25 @@ export default function Login() {
                     <FormItem>
                       <FormLabel className="text-sm font-medium">Password</FormLabel>
                       <FormControl>
-                        <Input
-                          placeholder="Your password"
-                          type="password"
-                          autoComplete="current-password"
-                          disabled={isLoading}
-                          className="h-11"
-                          {...field}
-                        />
+                        <div className="relative">
+                          <Input
+                            placeholder="Your password"
+                            type={showPassword ? "text" : "password"}
+                            autoComplete="current-password"
+                            disabled={isLoading}
+                            className="h-11 pr-10"
+                            {...field}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword((v) => !v)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9ca3af] hover:text-[#0f0f14]"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                            tabIndex={-1}
+                          >
+                            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        </div>
                       </FormControl>
                       <FormMessage />
                     </FormItem>

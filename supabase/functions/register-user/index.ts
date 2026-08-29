@@ -32,18 +32,38 @@ Deno.serve(async (req) => {
 
     const email = authData.user.email?.toLowerCase() ?? "";
     const isOwner = email === OWNER_EMAIL;
-    let profileRole = role ?? "reviewer";
+    const meta = (authData.user.user_metadata ?? {}) as Record<string, unknown>;
+    const metaRole = String(meta.role ?? meta.user_role ?? "").toLowerCase();
+    let profileRole = (role ?? (metaRole === "brand" ? "brand" : metaRole === "reviewer" ? "reviewer" : "reviewer")) as
+      | "reviewer"
+      | "brand"
+      | "admin"
+      | "super_admin";
+    // Normal reviewer/brand always approved. Pending is only for shared-admin password path (app-side).
     let approvalStatus: string | null = "approved";
 
     if (isOwner) {
       profileRole = "super_admin";
       approvalStatus = "approved";
+    } else if (profileRole === "reviewer" || profileRole === "brand") {
+      approvalStatus = "approved";
     }
+
+    const resolvedUsername =
+      username ??
+      (typeof meta.username === "string" ? meta.username : null) ??
+      email.split("@")[0];
+    const resolvedCompany =
+      companyName?.trim() ||
+      (typeof meta.company_name === "string" ? meta.company_name : "") ||
+      (typeof meta.companyName === "string" ? meta.companyName : "") ||
+      resolvedUsername ||
+      "Brand";
 
     const { error: profileErr } = await admin.from("profiles").upsert({
       id: authData.user.id,
       email,
-      username: username ?? email.split("@")[0],
+      username: resolvedUsername,
       role: profileRole,
       approval_status: approvalStatus,
       suspended: false,
@@ -51,14 +71,19 @@ Deno.serve(async (req) => {
     if (profileErr) return errorResponse(profileErr.message, 500, "internal_error");
 
     if (profileRole === "brand") {
-      await admin.from("brands").upsert({
-        user_id: authData.user.id,
-        company_name: companyName?.trim() || username || "Brand",
-      });
+      const { data: existingBrand } = await admin.from("brands").select("id").eq("user_id", authData.user.id).maybeSingle();
+      if (existingBrand?.id) {
+        await admin.from("brands").update({ company_name: resolvedCompany }).eq("id", existingBrand.id);
+      } else {
+        await admin.from("brands").insert({
+          user_id: authData.user.id,
+          company_name: resolvedCompany,
+        });
+      }
     }
 
     if (profileRole === "reviewer") {
-      await admin.from("reviewer_profiles").upsert({ user_id: authData.user.id });
+      await admin.from("reviewer_profiles").upsert({ user_id: authData.user.id }, { onConflict: "user_id" });
     }
 
     return jsonResponse({ ok: true, role: profileRole });
