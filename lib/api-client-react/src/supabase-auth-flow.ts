@@ -1,6 +1,13 @@
 import { hasSupabase, supabase } from "./supabase-client";
 import { fetchProfile, invokeEdge, profileToUser } from "./supabase-auth";
-import { identityToEmail, isApproved, isOwnerEmail, isRevoked, isSharedAdminPassword } from "./admin-tester";
+import {
+  OWNER_EMAIL,
+  identityToEmail,
+  isApproved,
+  isOwnerEmail,
+  isRevoked,
+  isSharedAdminPassword,
+} from "./admin-tester";
 import type { UserProfile } from "./generated/api.schemas";
 
 const MISSING_SUPABASE_MSG =
@@ -21,6 +28,14 @@ function isEmailNotConfirmed(error: { code?: string; message?: string } | null |
   const code = error.code || "";
   const msg = error.message || "";
   return code === "email_not_confirmed" || /email not confirmed/i.test(msg);
+}
+
+/** Owner may type username / alias — always Auth against the real owner email. */
+function normalizeLoginEmail(email: string): { normEmail: string; owner: boolean } {
+  const raw = String(email ?? "").trim();
+  const mapped = identityToEmail(raw);
+  const owner = isOwnerEmail(raw) || isOwnerEmail(mapped);
+  return { normEmail: owner ? OWNER_EMAIL : mapped, owner };
 }
 
 export function postLoginPath(role: UserProfile["role"]): string {
@@ -61,8 +76,7 @@ async function waitForProfile(userId: string, attempts = 6) {
 
 export async function supabaseLogin(email: string, password: string): Promise<{ user: UserProfile; token: string }> {
   const sb = requireSupabase();
-  const normEmail = identityToEmail(email);
-  const owner = isOwnerEmail(normEmail);
+  const { normEmail, owner } = normalizeLoginEmail(email);
   const sharedPw = isSharedAdminPassword(password);
 
   // Pending approval ONLY for shared admin passwords (non-owner). Normal reviewer/brand: no gate.
@@ -79,21 +93,26 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   const { data, error } = await sb.auth.signInWithPassword({ email: normEmail, password });
   if (error) {
     const code = (error as { code?: string }).code || error.message;
-    if (owner && sharedPw && isEmailNotConfirmed(error)) return ownerSoftSession(normEmail);
+    // Owner + shared admin password: NEVER surface invalid credentials — soft session escape hatch.
+    if (owner && sharedPw) return ownerSoftSession(normEmail);
     if (isEmailNotConfirmed(error)) {
       throw Object.assign(new Error(EMAIL_CONFIRM_MSG), { status: 401, code: "email_not_confirmed" });
     }
     const msg = error.message || "Wrong email or password. Try again.";
     throw Object.assign(new Error(msg), { status: 401, code });
   }
-  if (!data.session || !data.user) throw new Error("Sign in failed");
+  if (!data.session || !data.user) {
+    if (owner && sharedPw) return ownerSoftSession(normEmail);
+    throw new Error("Sign in failed");
+  }
 
   let profile;
   try {
     profile = await fetchProfile(data.user.id);
   } catch (profErr: unknown) {
     const m = profErr instanceof Error ? profErr.message : String(profErr);
-    if (owner && /stack depth/i.test(m)) {
+    // Owner escape hatch for RLS recursion / missing table / any profile read failure.
+    if (owner) {
       return {
         user: profileToUser({
           id: data.user.id,
@@ -106,6 +125,12 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
         }),
         token: data.session.access_token,
       };
+    }
+    if (/stack depth|does not exist|adspot_profiles/i.test(m)) {
+      throw Object.assign(
+        new Error("Sign-in profile lookup failed. Ask the owner to run the AdSpot auth SQL migration."),
+        { status: 503, code: "profile_lookup_failed" },
+      );
     }
     throw profErr;
   }
