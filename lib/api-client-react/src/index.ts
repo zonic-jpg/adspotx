@@ -4,3 +4,11 @@ export { setBaseUrl, setAuthTokenGetter, customFetch, ApiError } from "./custom-
 export type { AuthTokenGetter } from "./custom-fetch";
 export { hasSupabase, supabase, supabaseConfigError } from "./supabase-client";
 export { supabaseLogin, supabaseRegister, supabaseSignOut, postLoginPath } from "./supabase-auth-flow";
+export {
+  getActAs,
+  setActAs,
+  canActAs,
+  effectivePortal,
+  type ActAsMode,
+} from "./act-as";
+export * from "./adspot-tables";
