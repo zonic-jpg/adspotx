@@ -4,6 +4,7 @@
  */
 import { supabase } from "./supabase-client";
 import { getSessionToken, invokeEdge, fetchProfile } from "./supabase-auth";
+import { ADSPOT_PROFILES, ADSPOT_BRANDS, ADSPOT_REVIEWER_PROFILES } from "./adspot-tables";
 
 type RouteResult = { status: number; body: unknown };
 
@@ -59,7 +60,7 @@ async function publicVideos(params: URLSearchParams) {
   const limit = Number(params.get("limit") ?? 12);
   const { data: ads, error } = await supabase!
     .from("ads")
-    .select("*, brands(company_name)")
+    .select("*, adspot_brands(company_name)")
     .eq("status", "active")
     .limit(limit);
   if (error) throw error;
@@ -75,8 +76,8 @@ async function publicVideos(params: URLSearchParams) {
 
 async function publicStats() {
   const [users, brands, sessions, ledger, activeAds] = await Promise.all([
-    supabase!.from("profiles").select("id", { count: "exact", head: true }),
-    supabase!.from("brands").select("id", { count: "exact", head: true }),
+    supabase!.from(ADSPOT_PROFILES).select("id", { count: "exact", head: true }),
+    supabase!.from(ADSPOT_BRANDS).select("id", { count: "exact", head: true }),
     supabase!.from("review_sessions").select("id", { count: "exact", head: true }).eq("status", "completed"),
     supabase!.from("points_ledger").select("amount"),
     supabase!.from("ads").select("id", { count: "exact", head: true }).eq("status", "active"),
@@ -106,7 +107,7 @@ async function authMe() {
   const id = await requireUid();
   const profile = await fetchProfile(id);
   if (!profile) return err(401, "unauthorized", "Not signed in");
-  const { data: rp } = await supabase!.from("reviewer_profiles").select("*").eq("user_id", id).maybeSingle();
+  const { data: rp } = await supabase!.from(ADSPOT_REVIEWER_PROFILES).select("*").eq("user_id", id).maybeSingle();
   return {
     status: 200,
     body: {
@@ -128,7 +129,7 @@ async function adFeed(params: URLSearchParams) {
   const offset = Number(params.get("offset") ?? 0);
   const { data, error, count } = await supabase!
     .from("ads")
-    .select("*, brands(company_name), questions(id)", { count: "exact" })
+    .select("*, adspot_brands(company_name), questions(id)", { count: "exact" })
     .eq("status", "active")
     .range(offset, offset + limit - 1);
   if (error) throw error;
@@ -154,7 +155,7 @@ async function adDetail(adId: string) {
   await requireUid();
   const { data: ad, error } = await supabase!
     .from("ads")
-    .select("*, brands(company_name), questions(*)")
+    .select("*, adspot_brands(company_name), questions(*)")
     .eq("id", adId)
     .maybeSingle();
   if (error) throw error;
@@ -273,7 +274,7 @@ async function leaderboardHistory(params: URLSearchParams) {
 
 async function leaderboardEligibility() {
   const userId = await requireUid();
-  const { data: rp } = await supabase!.from("reviewer_profiles").select("*").eq("user_id", userId).maybeSingle();
+  const { data: rp } = await supabase!.from(ADSPOT_REVIEWER_PROFILES).select("*").eq("user_id", userId).maybeSingle();
   const required = ["gender", "age_band", "state"];
   const missing = required.filter((f) => !rp?.[f]);
   return { status: 200, body: { eligible: missing.length === 0, missingFields: missing } };
@@ -282,7 +283,7 @@ async function leaderboardEligibility() {
 // ── Brand ads ───────────────────────────────────────────────────────────────
 
 async function brandAdsForUser(userId: string) {
-  const { data: brand } = await supabase!.from("brands").select("id").eq("user_id", userId).maybeSingle();
+  const { data: brand } = await supabase!.from(ADSPOT_BRANDS).select("id").eq("user_id", userId).maybeSingle();
   if (!brand) return [];
   const { data, error } = await supabase!.from("ads").select("*, questions(id)").eq("brand_id", brand.id);
   if (error) throw error;
@@ -313,7 +314,7 @@ function mapBrandAd(a: Record<string, unknown>) {
 async function brandCreateAd(body: Record<string, unknown>) {
   const userId = await requireUid();
   await requireRole("brand", "admin", "super_admin");
-  const { data: brand } = await supabase!.from("brands").select("id").eq("user_id", userId).maybeSingle();
+  const { data: brand } = await supabase!.from(ADSPOT_BRANDS).select("id").eq("user_id", userId).maybeSingle();
   if (!brand) return err(404, "not_found", "Brand profile not found");
   const { data: ad, error } = await supabase!
     .from("ads")
@@ -408,7 +409,7 @@ async function adminEvents(params: URLSearchParams) {
 async function adminAds(params: URLSearchParams) {
   await requireRole("admin", "super_admin");
   const limit = Number(params.get("limit") ?? 50);
-  const { data, error } = await supabase!.from("ads").select("*, brands(company_name)").limit(limit);
+  const { data, error } = await supabase!.from("ads").select("*, adspot_brands(company_name)").limit(limit);
   if (error) throw error;
   return { status: 200, body: { ads: data ?? [], total: data?.length ?? 0 } };
 }
@@ -416,7 +417,7 @@ async function adminAds(params: URLSearchParams) {
 async function adminUsers(params: URLSearchParams) {
   await requireRole("admin", "super_admin");
   const role = params.get("role");
-  let q = supabase!.from("profiles").select("*");
+  let q = supabase!.from(ADSPOT_PROFILES).select("*");
   if (role) q = q.eq("role", role);
   const { data, error } = await q.limit(100);
   if (error) throw error;
@@ -441,7 +442,7 @@ async function adminSettings() {
 async function adminStats() {
   await requireRole("admin", "super_admin");
   const [profiles, ads, sessions] = await Promise.all([
-    supabase!.from("profiles").select("id", { count: "exact", head: true }),
+    supabase!.from(ADSPOT_PROFILES).select("id", { count: "exact", head: true }),
     supabase!.from("ads").select("id", { count: "exact", head: true }),
     supabase!.from("review_sessions").select("id", { count: "exact", head: true }),
   ]);
@@ -457,14 +458,14 @@ async function adminStats() {
 
 async function adminTeam() {
   await requireRole("admin", "super_admin");
-  const { data, error } = await supabase!.from("profiles").select("*").in("role", ["admin", "super_admin"]);
+  const { data, error } = await supabase!.from(ADSPOT_PROFILES).select("*").in("role", ["admin", "super_admin"]);
   if (error) throw error;
   return { status: 200, body: { team: data ?? [], total: data?.length ?? 0 } };
 }
 
 async function adminBrands(params: URLSearchParams) {
   await requireRole("admin", "super_admin");
-  const { data, error } = await supabase!.from("brands").select("*, profiles(email, username)").limit(100);
+  const { data, error } = await supabase!.from(ADSPOT_BRANDS).select("*, adspot_profiles(email, username)").limit(100);
   if (error) throw error;
   return { status: 200, body: { brands: data ?? [], total: data?.length ?? 0 } };
 }
@@ -474,7 +475,7 @@ async function adminPoints(params: URLSearchParams) {
   const limit = Number(params.get("limit") ?? 50);
   const { data, error } = await supabase!
     .from("points_ledger")
-    .select("*, profiles(email, username)")
+    .select("*, adspot_profiles(email, username)")
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
@@ -483,7 +484,7 @@ async function adminPoints(params: URLSearchParams) {
 
 async function adminRedemptions(params: URLSearchParams) {
   await requireRole("admin", "super_admin");
-  const { data, error } = await supabase!.from("redemptions").select("*, profiles(email, username)").limit(100);
+  const { data, error } = await supabase!.from("redemptions").select("*, adspot_profiles(email, username)").limit(100);
   if (error) throw error;
   return { status: 200, body: { redemptions: data ?? [], total: data?.length ?? 0 } };
 }
@@ -531,7 +532,7 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
     }
     if (path === "/auth/profile" && method === "PATCH") {
       const userId = await requireUid();
-      const { error } = await supabase!.from("reviewer_profiles").upsert({
+      const { error } = await supabase!.from(ADSPOT_REVIEWER_PROFILES).upsert({
         user_id: userId,
         gender: body.gender,
         age_band: body.ageBand,

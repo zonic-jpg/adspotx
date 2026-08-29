@@ -1,4 +1,5 @@
 import { supabase } from "./supabase-client";
+import { ADSPOT_PROFILES } from "./adspot-tables";
 import type { UserProfile, UserProfileRole } from "./generated/api.schemas";
 
 export type AdspotProfile = {
@@ -28,7 +29,7 @@ export function profileToUser(p: AdspotProfile): UserProfile {
 
 export async function fetchProfile(userId: string): Promise<AdspotProfile | null> {
   const sb = requireClient();
-  const { data, error } = await sb.from("profiles").select("*").eq("id", userId).maybeSingle();
+  const { data, error } = await sb.from(ADSPOT_PROFILES).select("*").eq("id", userId).maybeSingle();
   if (error) throw error;
   return data as AdspotProfile | null;
 }

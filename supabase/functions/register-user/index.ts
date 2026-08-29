@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       resolvedUsername ||
       "Brand";
 
-    const { error: profileErr } = await admin.from("profiles").upsert({
+    const { error: profileErr } = await admin.from("adspot_profiles").upsert({
       id: authData.user.id,
       email,
       username: resolvedUsername,
@@ -71,11 +71,15 @@ Deno.serve(async (req) => {
     if (profileErr) return errorResponse(profileErr.message, 500, "internal_error");
 
     if (profileRole === "brand") {
-      const { data: existingBrand } = await admin.from("brands").select("id").eq("user_id", authData.user.id).maybeSingle();
+      const { data: existingBrand } = await admin
+        .from("adspot_brands")
+        .select("id")
+        .eq("user_id", authData.user.id)
+        .maybeSingle();
       if (existingBrand?.id) {
-        await admin.from("brands").update({ company_name: resolvedCompany }).eq("id", existingBrand.id);
+        await admin.from("adspot_brands").update({ company_name: resolvedCompany }).eq("id", existingBrand.id);
       } else {
-        await admin.from("brands").insert({
+        await admin.from("adspot_brands").insert({
           user_id: authData.user.id,
           company_name: resolvedCompany,
         });
@@ -83,7 +87,7 @@ Deno.serve(async (req) => {
     }
 
     if (profileRole === "reviewer") {
-      await admin.from("reviewer_profiles").upsert({ user_id: authData.user.id }, { onConflict: "user_id" });
+      await admin.from("adspot_reviewer_profiles").upsert({ user_id: authData.user.id }, { onConflict: "user_id" });
     }
 
     return jsonResponse({ ok: true, role: profileRole });
