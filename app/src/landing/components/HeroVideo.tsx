@@ -1,13 +1,15 @@
 import { useRef, useState } from "react";
 import { Play } from "lucide-react";
 
-/** Placeholder demo clip — swap for a brand asset in public/ when available. */
-const HERO_VIDEO_SRC =
-  "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4";
+/** Same-origin proxy (Netlify hero-video fn). Pexels African editorial fallback if proxy fails. */
+const HERO_VIDEO_SRC = "/hero-demo.mp4";
+const HERO_VIDEO_FALLBACK =
+  "https://videos.pexels.com/video-files/3195394/3195394-sd_640_360_25fps.mp4";
 
 export function HeroVideo() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [src, setSrc] = useState(HERO_VIDEO_SRC);
 
   const handlePlay = () => {
     const video = videoRef.current;
@@ -20,13 +22,17 @@ export function HeroVideo() {
     <div className="relative w-full overflow-hidden rounded-2xl border border-border bg-zinc-950 shadow-xl aspect-video">
       <video
         ref={videoRef}
-        src={HERO_VIDEO_SRC}
+        key={src}
+        src={src}
         className="h-full w-full object-cover"
         playsInline
         controls={playing}
         preload="metadata"
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
+        onError={() => {
+          if (src !== HERO_VIDEO_FALLBACK) setSrc(HERO_VIDEO_FALLBACK);
+        }}
       />
 
       {!playing && (
