@@ -219,3 +219,7 @@ update public.adspot_profiles
 set approval_status = 'approved'
 where role in ('reviewer', 'brand')
   and coalesce(approval_status, 'pending') = 'pending';
+
+grant select, insert, update, delete on public.adspot_profiles to authenticated;
+grant select, insert, update, delete on public.adspot_brands to authenticated;
+grant select, insert, update, delete on public.adspot_reviewer_profiles to authenticated;

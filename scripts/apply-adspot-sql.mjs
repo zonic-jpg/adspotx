@@ -30,22 +30,39 @@ async function runFile(rel) {
   console.log(rel, res.status, text.slice(0, 400));
   // Soft-fail: never break the Netlify/site build if management SQL is unavailable.
   if (!res.ok) console.warn(`SQL soft-fail for ${rel}: ${res.status}`);
+  return res.ok;
 }
 
 async function main() {
   if (!TOK) {
-    console.log("SUPABASE_ACCESS_TOKEN not set — skip SQL apply");
+    console.warn(
+      "SUPABASE_ACCESS_TOKEN not set — skipping SQL apply. Admin console will 401 " +
+        "until the AdSpot auth + ops migrations are applied to the Supabase project.",
+    );
     return;
   }
+  const failed = [];
   for (const f of [
+    // Foundation first: adspot_profiles/brands/reviewer_profiles, adspot_is_admin(),
+    // signup trigger and the owner super_admin row. Every ops policy below calls
+    // adspot_is_admin(), so applying ops first fails on a DB that never got this.
+    "supabase/migrations/20260829_auth_smooth_trigger_rls.sql",
     "supabase/migrations/20260829_adspot_ops_00.sql",
     "supabase/migrations/20260829_adspot_ops_01.sql",
     "supabase/migrations/20260829_adspot_ops_02.sql",
     "supabase/migrations/20260829_adspot_ops_03.sql",
     "supabase/migrations/20260829_adspot_ops_schema_seed.sql",
-  ]) await runFile(f);
-  await runFile("supabase/migrations/20260829_adspot_comnavig_seed.sql");
-  console.log("AdSpot SQL apply complete");
+  ]) {
+    if (!(await runFile(f))) failed.push(f);
+  }
+  if (!(await runFile("supabase/migrations/20260829_adspot_comnavig_seed.sql"))) {
+    failed.push("comnavig seed");
+  }
+  console.log(
+    failed.length
+      ? `AdSpot SQL apply finished with ${failed.length} soft-failure(s): ${failed.join(", ")}`
+      : "AdSpot SQL apply complete — all files applied",
+  );
 }
 
 main().catch((e) => {
