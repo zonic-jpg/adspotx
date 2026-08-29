@@ -54,7 +54,7 @@ function ActAsSwitcher({ role }: { role: string }) {
   const options: { id: ActAsMode; label: string; href: string }[] = [
     { id: "admin", label: "Admin", href: "/admin/dashboard" },
     { id: "brand", label: "Brand", href: "/dashboard" },
-    { id: "reviewer", label: "Reviewer", href: "/earn/dashboard" },
+    { id: "reviewer", label: "Reviewer", href: "~/earn/dashboard" },
   ];
 
   return (
