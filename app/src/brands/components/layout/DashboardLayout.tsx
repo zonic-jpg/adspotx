@@ -52,9 +52,9 @@ function ActAsSwitcher({ role }: { role: string }) {
   if (!canActAs(role)) return null;
 
   const options: { id: ActAsMode; label: string; href: string }[] = [
-    { id: "admin", label: "Admin", href: "/admin/dashboard" },
-    { id: "brand", label: "Brand", href: "/dashboard" },
-    { id: "reviewer", label: "Reviewer", href: "/earn/dashboard" },
+    { id: "admin", label: "Admin", href: "~/brands/admin/dashboard" },
+    { id: "brand", label: "Brand", href: "~/brands/dashboard" },
+    { id: "reviewer", label: "Reviewer", href: "~/earn/dashboard" },
   ];
 
   return (
