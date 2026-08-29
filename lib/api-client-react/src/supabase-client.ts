@@ -1,9 +1,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-function viteEnv(key: string): string {
-  const raw = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.[key];
-  return typeof raw === "string" ? raw.trim() : "";
-}
+/** Rubba-style static env reads — Vite only inlines literal `import.meta.env.VITE_*`. */
+const url = String(import.meta.env.VITE_SUPABASE_URL ?? "").trim();
+const anon = String(import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 
 export function isValidSupabaseUrl(value: string): boolean {
   if (!value) return false;
@@ -15,26 +14,24 @@ export function isValidSupabaseUrl(value: string): boolean {
   }
 }
 
-const url = viteEnv("VITE_SUPABASE_URL");
-const anon = viteEnv("VITE_SUPABASE_ANON_KEY");
+export const hasBackend = Boolean(isValidSupabaseUrl(url) && anon);
 
 let client: SupabaseClient | null = null;
-if (isValidSupabaseUrl(url) && anon) {
+if (hasBackend) {
   try {
     client = createClient(url, anon, {
-      auth: { persistSession: true, autoRefreshToken: true },
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
   } catch (err) {
     console.warn("[supabase] createClient failed:", (err as Error)?.message ?? err);
     client = null;
   }
-} else if (typeof console !== "undefined" && (url || anon)) {
+} else if (url || anon) {
   console.warn("[supabase] incomplete VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY — auth disabled");
 }
 
-export const supabase = client;
+export const supabase: SupabaseClient | null = client;
 export const hasSupabase = !!supabase;
-export const supabaseConfigError =
-  hasSupabase
-    ? null
-    : "Supabase is not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).";
+export const supabaseConfigError = hasSupabase
+  ? null
+  : "Supabase is not configured (missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).";

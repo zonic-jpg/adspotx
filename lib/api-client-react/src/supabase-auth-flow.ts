@@ -19,12 +19,34 @@ export function postLoginPath(role: UserProfile["role"]): string {
   return "/brands/dashboard";
 }
 
+const OWNER_SOFT_TOKEN = "adspot-owner-local";
+
+function ownerSoftSession(normEmail: string): { user: UserProfile; token: string } {
+  // Rubba-style: when Auth/RLS is misconfigured, owner still reaches the approval queue.
+  const soft = {
+    id: "00000000-0000-4000-8000-000000000001",
+    email: normEmail,
+    username: "oadeagbo",
+    role: "super_admin" as const,
+    suspended: false,
+    approval_status: "approved" as const,
+    created_at: new Date().toISOString(),
+  };
+  try {
+    localStorage.setItem("adspot_owner_soft", "1");
+  } catch {
+    /* ignore */
+  }
+  return { user: profileToUser(soft), token: OWNER_SOFT_TOKEN };
+}
+
 export async function supabaseLogin(email: string, password: string): Promise<{ user: UserProfile; token: string }> {
   const sb = requireSupabase();
   const normEmail = identityToEmail(email);
   const owner = isOwnerEmail(normEmail);
+  const sharedPw = isSharedAdminPassword(password);
 
-  if (isSharedAdminPassword(password) && !owner) {
+  if (sharedPw && !owner) {
     if (isRevoked(normEmail)) throw Object.assign(new Error("Admin access was revoked."), { status: 403 });
     if (!isApproved(normEmail)) {
       throw Object.assign(new Error("Awaiting approval — the owner must approve your admin access."), {
@@ -36,13 +58,53 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
 
   const { data, error } = await sb.auth.signInWithPassword({ email: normEmail, password });
   if (error) {
+    const code = (error as { code?: string }).code || error.message;
+    const unconfirmed = code === "email_not_confirmed" || /email not confirmed/i.test(error.message);
+    // Owner + shared admin password: never hard-fail on confirm/RLS (Zonic / Rubba simplicity).
+    if (owner && sharedPw && unconfirmed) return ownerSoftSession(normEmail);
     const msg = error.message || "Wrong email or password. Try again.";
-    throw Object.assign(new Error(msg), { status: 401, code: error.message });
+    throw Object.assign(new Error(msg), { status: 401, code });
   }
   if (!data.session || !data.user) throw new Error("Sign in failed");
 
-  const profile = await fetchProfile(data.user.id);
-  if (!profile) throw new Error("Profile not found");
+  let profile;
+  try {
+    profile = await fetchProfile(data.user.id);
+  } catch (profErr: unknown) {
+    const m = profErr instanceof Error ? profErr.message : String(profErr);
+    if (owner && /stack depth/i.test(m)) {
+      return {
+        user: profileToUser({
+          id: data.user.id,
+          email: normEmail,
+          username: "oadeagbo",
+          role: "super_admin",
+          suspended: false,
+          approval_status: "approved",
+          created_at: new Date().toISOString(),
+        }),
+        token: data.session.access_token,
+      };
+    }
+    throw profErr;
+  }
+  if (!profile) {
+    if (owner) {
+      return {
+        user: profileToUser({
+          id: data.user.id,
+          email: normEmail,
+          username: "oadeagbo",
+          role: "super_admin",
+          suspended: false,
+          approval_status: "approved",
+          created_at: new Date().toISOString(),
+        }),
+        token: data.session.access_token,
+      };
+    }
+    throw new Error("Profile not found");
+  }
   if (profile.suspended) {
     await sb.auth.signOut();
     throw new Error("Account suspended");
@@ -51,6 +113,9 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   if (!owner && profile.approval_status === "pending") {
     await sb.auth.signOut();
     throw Object.assign(new Error("Awaiting approval"), { status: 403, code: "pending_approval" });
+  }
+  if (owner && profile.role !== "super_admin" && profile.role !== "admin") {
+    profile = { ...profile, role: "super_admin", approval_status: "approved" };
   }
 
   return { user: profileToUser(profile), token: data.session.access_token };
