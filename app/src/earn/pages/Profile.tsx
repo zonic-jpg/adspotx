@@ -20,6 +20,7 @@ interface Profile {
   employmentStatus?: string; educationLevel?: string; incomeBand?: string;
   occupationSector?: string; deviceType?: string; maritalStatus?: string;
   interests?: string[];
+  displayName?: string;
   completenessPct?: number; missingFields?: string[]; profileComplete?: boolean;
 }
 
@@ -115,7 +116,18 @@ export default function Profile() {
       </div>
 
       {/* Grid of fields */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+      <Field label="Leaderboard display name">
+        <input
+          value={p.displayName ?? ""}
+          onChange={(e) => setP((prev) => ({ ...prev, displayName: e.target.value }))}
+          placeholder="Shown on leaderboard (not your brand name)"
+          maxLength={40}
+          style={selStyle}
+          data-testid="earn-display-name"
+        />
+      </Field>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginTop: 16 }}>
         <Field label="Gender"><Dropdown value={p.gender} onChange={set("gender")} options={OPTS.gender} placeholder="Select…" /></Field>
         <Field label="Age band"><Dropdown value={p.ageBand} onChange={set("ageBand")} options={OPTS.ageBand} placeholder="Select…" /></Field>
         <Field label="State"><Dropdown value={p.state} onChange={set("state")} options={NG_STATES.map((s) => ({ v: s, l: s }))} placeholder="Select state…" /></Field>
