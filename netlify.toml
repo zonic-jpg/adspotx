@@ -1,0 +1,29 @@
+# AdSpotX — Vite SPA on Netlify + Supabase (Phase 2)
+# Auth, data, and trusted logic: Supabase Auth + Edge Functions + RLS
+# No Express / Netlify demo API required for production.
+#
+# Auto-deploy: link GitHub repo zonic-jpg/adspotx → branch main.
+# Day-to-day: pnpm ship  (or npm run ship)
+
+[build]
+  command = "npx pnpm@9 install && npx pnpm@9 --filter @workspace/adspot-unified run build"
+  publish = "app/dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # Set in Netlify UI or here:
+  # VITE_SUPABASE_URL = "https://YOUR_PROJECT.supabase.co"
+  # VITE_SUPABASE_ANON_KEY = "eyJ..."
+
+# Hero video function kept (static asset proxy)
+[[redirects]]
+  from = "/hero-demo.mp4"
+  to = "/.netlify/functions/hero-video"
+  status = 200
+  force = true
+
+# SPA deep-link fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

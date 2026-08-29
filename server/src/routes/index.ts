@@ -1,0 +1,44 @@
+import { Router, type IRouter } from "express";
+import healthRouter from "./health";
+import authRouter from "./auth";
+import adsRouter from "./ads";
+import reviewsRouter from "./reviews";
+import pointsRouter from "./points";
+import leaderboardRouter from "./leaderboard";
+import brandsRouter from "./brands";
+import adminRouter from "./admin";
+import publicRouter from "./public";
+import packagesRouter from "./packages";
+import settingsRouter from "./settings";
+import rewardsRouter from "./rewards";
+import storageRouter from "./storage";
+import fraudRouter from "./fraud";
+import giftsRouter from "./gifts";
+import referralsRouter from "./referrals";
+import notificationsRouter from "./notifications";
+import brandAnalyticsRouter from "./brand-analytics";
+import partnersRouter from "./partners";
+
+const router: IRouter = Router();
+
+router.use(healthRouter);
+router.use(publicRouter);
+router.use(authRouter);
+router.use(adsRouter);
+router.use(reviewsRouter);
+router.use(pointsRouter);
+router.use(leaderboardRouter);
+router.use(brandsRouter);
+router.use(brandAnalyticsRouter);
+router.use(adminRouter);
+router.use(packagesRouter);
+router.use(settingsRouter);
+router.use(rewardsRouter);
+router.use(storageRouter);
+router.use(fraudRouter);
+router.use(giftsRouter);
+router.use(referralsRouter);
+router.use(notificationsRouter);
+router.use(partnersRouter);
+
+export default router;

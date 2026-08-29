@@ -1,0 +1,1 @@
+{"version":3,"file":"IntegrateAdSpotButton.d.ts","sourceRoot":"","sources":["../../src/components/IntegrateAdSpotButton.tsx"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,kBAAkB,EAAE,MAAM,cAAc,CAAC;AAQvD,MAAM,WAAW,0BAA0B;IACzC,SAAS,EAAE,MAAM,CAAC;IAClB,cAAc,CAAC,EAAE,CAAC,WAAW,EAAE,kBAAkB,KAAK,IAAI,CAAC;CAC5D;AAED,wBAAgB,qBAAqB,CAAC,EAAE,SAAS,EAAE,cAAc,EAAE,EAAE,0BAA0B,+BA2O9F"}

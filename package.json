@@ -1,0 +1,39 @@
+{
+  "name": "adspotx",
+  "private": true,
+  "version": "1.0.0",
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "typecheck": "pnpm -r run typecheck",
+    "build": "pnpm --filter @workspace/adspot-unified run build && pnpm --filter @workspace/partner-portal run build",
+    "build:legacy": "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/adspot-unified run build && pnpm --filter @workspace/partner-portal run build",
+    "dev:partners": "pnpm --filter @workspace/partner-portal run dev",
+    "start": "PORT=${PORT:-3001} STATIC_DIR=./app/dist node server/dist/index.mjs",
+    "dev:api": "PORT=${PORT:-3001} pnpm --filter @workspace/api-server run dev",
+    "dev:app": "pnpm --filter @workspace/adspot-unified run dev",
+    "preview": "pnpm --filter @workspace/adspot-unified run preview",
+    "test": "pnpm -r --if-present run test",
+    "lint": "pnpm -r --if-present run lint",
+    "audit": "node scripts/hostile-audit.mjs",
+    "audit:hostile": "node scripts/hostile-audit.mjs",
+    "audit:hostile:mock-only": "node scripts/hostile-audit.mjs --mock-only",
+    "test:reviewer-flow": "node scripts/test-reviewer-flow.mjs",
+    "package:staging": "node scripts/package-staging.mjs",
+    "package:production": "node scripts/package-production.mjs",
+    "render:business-plan": "node scripts/render-business-pdf.mjs",
+    "render:complete-overview": "node scripts/render-complete-overview-pdf.mjs",
+    "render:adspotx": "node scripts/render-adspotx-pdf.mjs",
+    "ship": "bash scripts/ship.sh",
+    "secrets:deploy": "bash scripts/set-secrets-and-deploy.sh"
+  },
+  "devDependencies": {
+    "jspdf": "2.5.2",
+    "playwright": "1.49.1",
+    "puppeteer-core": "23.11.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "zod": "3.25.76"
+    }
+  }
+}
