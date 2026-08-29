@@ -41,13 +41,27 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 -- ── RLS helper functions ────────────────────────────────────────────────────
+-- row_security=off is required: policies call these while reading profiles/brands,
+-- which otherwise recurse into the same policies (stack depth exceeded).
 create or replace function public.current_role()
-returns text language sql stable security definer set search_path = public as $$
+returns text
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
   select role from public.profiles where id = auth.uid();
 $$;
 
 create or replace function public.is_admin()
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role in ('admin', 'super_admin') and suspended = false
@@ -56,7 +70,13 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_super_admin()
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role = 'super_admin' and suspended = false
@@ -64,7 +84,13 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_brand_user()
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role = 'brand' and suspended = false
@@ -72,7 +98,13 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_reviewer()
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
   select exists (
     select 1 from public.profiles
     where id = auth.uid() and role = 'reviewer' and suspended = false
@@ -80,7 +112,13 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.owns_brand(bid uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+set row_security = off
+as $$
   select exists (select 1 from public.brands where id = bid and user_id = auth.uid());
 $$;
 
