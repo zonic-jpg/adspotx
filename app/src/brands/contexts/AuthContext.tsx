@@ -15,16 +15,26 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const brandMeQueryKey = () => [...getGetMeQueryKey(), "brand"] as const;
 
+function isOwnerSoftSession() {
+  try {
+    return localStorage.getItem("adspot_owner_soft") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const [ready, setReady] = useState(!hasSupabase);
   const sessionUserRef = useRef<UserProfile | null>(null);
+  const softOwner = isOwnerSoftSession();
 
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().finally(() => setReady(true));
     const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: { access_token?: string } | null) => {
-      if (!session) {
+      // Soft owner session has no Supabase JWT — do not wipe it on null session.
+      if (!session && !isOwnerSoftSession()) {
         sessionUserRef.current = null;
         queryClient.removeQueries({ queryKey: brandMeQueryKey() });
       }
@@ -34,7 +44,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const { data: user, isLoading: isUserLoading, error } = useGetMe({
     query: {
-      enabled: ready && hasSupabase,
+      // Soft owner bypasses /auth/me (no JWT until FINISH.sh confirms email).
+      enabled: ready && hasSupabase && !softOwner && !sessionUserRef.current,
       retry: false,
       queryKey: brandMeQueryKey(),
     },
@@ -53,6 +64,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     sessionUserRef.current = null;
+    try {
+      localStorage.removeItem("adspot_owner_soft");
+    } catch {
+      /* ignore */
+    }
     void supabaseSignOut();
     queryClient.removeQueries({ queryKey: brandMeQueryKey() });
     window.location.href = "/brands/login";
@@ -65,11 +81,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!error) return;
     if (error instanceof ApiError && error.status === 401) {
+      if (isOwnerSoftSession() || sessionUserRef.current) return;
       logout();
     }
   }, [error]);
 
-  const isLoading = !ready || (hasSupabase && isUserLoading && !sessionUserRef.current);
+  const isLoading =
+    !ready || (hasSupabase && !softOwner && isUserLoading && !sessionUserRef.current);
 
   return (
     <AuthContext.Provider value={{ user: resolvedUser ?? null, isLoading, login, logout }}>
