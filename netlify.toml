@@ -6,14 +6,12 @@
 # Day-to-day: pnpm ship  (or npm run ship)
 
 [build]
-  command = "npx pnpm@9 install && npx pnpm@9 --filter @workspace/adspot-unified run build"
+  command = "node scripts/apply-adspot-sql.mjs && npx pnpm@9 install && npx pnpm@9 --filter @workspace/adspot-unified run build"
   publish = "app/dist"
   functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "20"
-  # Public anon keys — bake into SPA (same Zonic Supabase project as MyYangaX).
-  # Override in Netlify UI if the project moves.
   VITE_SUPABASE_URL = "https://bnfbgqtdwyiockkxvapp.supabase.co"
   VITE_SUPABASE_ANON_KEY = "sb_publishable_9nU0w-V7QWrtqvuP2Iqihg_6Zsf2LSf"
 
@@ -21,10 +19,6 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Hero explainer is a static asset: app/public/hero-demo.mp4 → /hero-demo.mp4
-# (legacy netlify/functions/hero-video.mjs kept but unused)
-
-# SPA deep-link fallback
 [[redirects]]
   from = "/*"
   to = "/index.html"
