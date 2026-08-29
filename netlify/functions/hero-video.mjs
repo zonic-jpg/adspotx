@@ -1,11 +1,9 @@
 /**
- * Same-origin hero demo clip — proxies African editorial MP4 for landing preview.
- * Mixkit blocks client fetches; Pexels works from browser and Netlify function runtime.
+ * Legacy hero proxy — unused while /hero-demo.mp4 is served as a static
+ * explainer from app/public. Kept so old redirects / clients do not 404 the function path.
  */
 const REMOTES = [
   "https://videos.pexels.com/video-files/3195394/3195394-sd_640_360_25fps.mp4",
-  "https://videos.pexels.com/video-files/3195394/3195394-uhd_2560_1440_25fps.mp4",
-  "https://assets.mixkit.co/videos/preview/mixkit-black-model-through-acrylic-101633-large.mp4",
 ];
 
 export async function handler() {
@@ -34,8 +32,11 @@ export async function handler() {
   }
 
   return {
-    statusCode: 502,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    body: JSON.stringify({ error: "hero_video_unavailable" }),
+    statusCode: 302,
+    headers: {
+      Location: "/hero-demo.mp4",
+      "Access-Control-Allow-Origin": "*",
+    },
+    body: "",
   };
 }

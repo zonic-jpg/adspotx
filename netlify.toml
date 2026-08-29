@@ -21,12 +21,8 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Hero video function kept (static asset proxy)
-[[redirects]]
-  from = "/hero-demo.mp4"
-  to = "/.netlify/functions/hero-video"
-  status = 200
-  force = true
+# Hero explainer is a static asset: app/public/hero-demo.mp4 → /hero-demo.mp4
+# (legacy netlify/functions/hero-video.mjs kept but unused)
 
 # SPA deep-link fallback
 [[redirects]]

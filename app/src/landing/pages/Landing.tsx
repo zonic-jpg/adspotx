@@ -127,7 +127,7 @@ export default function Landing() {
               <div className="order-1 lg:order-2">
                 <HeroVideo />
                 <p className="mt-3 text-center text-xs text-muted-foreground">
-                  Sample advert — reviewers watch, answer questions, and earn points.
+                  How AdSpot works — watch, answer, earn. Brands get verified engagement.
                 </p>
               </div>
             </div>

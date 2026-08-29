@@ -15,3 +15,7 @@ server/.env
 .supabase/
 *.tsbuildinfo
 .pnpm-store/
+.tools/
+app/src/assets/explainer/_frames/
+ffmpeg-static-*.tgz
+
