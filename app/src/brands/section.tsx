@@ -17,20 +17,54 @@ import AdminAdSpotX from "@brands/pages/admin/AdminAdSpotX";
 import Settings from "@brands/pages/Settings";
 
 import { DashboardLayout } from "@brands/components/layout/DashboardLayout";
+import { canActAs, effectivePortal, getActAs } from "@workspace/api-client-react";
+import { useEffect, useState } from "react";
 
-function ProtectedRoute({ component: Component, adminOnly = false }: { component: React.ComponentType<any>; adminOnly?: boolean }) {
+function useActAsTick() {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const onChange = () => setTick((n) => n + 1);
+    window.addEventListener("adspot-act-as", onChange);
+    window.addEventListener("storage", onChange);
+    return () => {
+      window.removeEventListener("adspot-act-as", onChange);
+      window.removeEventListener("storage", onChange);
+    };
+  }, []);
+  return getActAs();
+}
+
+function ProtectedRoute({
+  component: Component,
+  adminOnly = false,
+}: {
+  component: React.ComponentType<any>;
+  adminOnly?: boolean;
+}) {
   const { user, isLoading } = useAuth();
+  useActAsTick();
 
   if (isLoading) {
-    return <div className="min-h-screen flex items-center justify-center bg-background"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
   }
-  if (!user) {
-    return <Redirect to="/login" />;
-  }
+  if (!user) return <Redirect to="/login" />;
 
-  const isAdminRole = user.role === "admin" || user.role === "super_admin";
-  if (adminOnly && !isAdminRole) return <Redirect to="/dashboard" />;
-  if (!adminOnly && isAdminRole) return <Redirect to="/admin/dashboard" />;
+  const elevated = canActAs(user.role);
+  const portal = effectivePortal(user.role);
+
+  if (adminOnly) {
+    if (!elevated) return <Redirect to="/dashboard" />;
+    if (portal === "brand") return <Redirect to="/dashboard" />;
+    if (portal === "reviewer") return <Redirect to="~/earn/dashboard" />;
+  } else if (elevated) {
+    // Brand pages while elevated: only when Act as Brand
+    if (portal === "admin") return <Redirect to="/admin/dashboard" />;
+    if (portal === "reviewer") return <Redirect to="~/earn/dashboard" />;
+  }
 
   return (
     <DashboardLayout>
@@ -41,17 +75,22 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
 
 function BrandRoutes() {
   const { user } = useAuth();
+  useActAsTick();
+  const portal = user ? effectivePortal(user.role) : "admin";
+
   return (
     <Switch>
       <Route path="/">
         {() => (
           <Redirect
             to={
-              user
-                ? ["admin", "super_admin"].includes(user.role)
+              !user
+                ? "/login"
+                : portal === "admin"
                   ? "/admin/dashboard"
-                  : "/dashboard"
-                : "/login"
+                  : portal === "reviewer"
+                    ? "~/earn/dashboard"
+                    : "/dashboard"
             }
           />
         )}
