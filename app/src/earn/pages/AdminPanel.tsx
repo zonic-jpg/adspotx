@@ -1346,7 +1346,7 @@ function PackagesTab({ packages, isLoading, onRefresh }: { packages: AdPackage[]
                       <span className="font-black text-[#0f0f14]">${typeof pkg.price === "number" ? pkg.price.toFixed(2) : pkg.price}</span>
                       <span>{pkg.adSlots} slot{pkg.adSlots !== 1 ? "s" : ""}</span>
                       <span>{pkg.durationDays}d</span>
-                      <span>{pkg.maxImpressions?.toLocaleString()} impressions</span>
+                      <span>{(pkg.maxImpressions ?? (pkg as { impressions?: number }).impressions ?? 0).toLocaleString()} impressions</span>
                     </div>
                   </div>
                   <div className="flex gap-1.5">

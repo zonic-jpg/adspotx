@@ -123,10 +123,22 @@ async function publicStats() {
   };
 }
 
+function mapAdPackage(row: Record<string, unknown>) {
+  return {
+    ...row,
+    adSlots: Number(row.adSlots ?? row.ad_slots ?? 1),
+    durationDays: Number(row.durationDays ?? row.duration_days ?? 30),
+    maxImpressions: Number(row.maxImpressions ?? row.max_impressions ?? row.impressions ?? 0),
+    featured: Boolean(row.featured),
+    active: row.active !== false,
+    createdAt: row.createdAt ?? row.created_at,
+  };
+}
+
 async function publicPackages() {
   const { data, error } = await supabase!.from(ADSPOT_PACKAGES).select("*").eq("active", true).order("sort_order");
   if (error) throw error;
-  return { status: 200, body: { packages: data ?? [] } };
+  return { status: 200, body: { packages: (data ?? []).map((row) => mapAdPackage(row as Record<string, unknown>)) } };
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────
@@ -515,7 +527,7 @@ async function adminPackages() {
   await requireRole("admin", "super_admin");
   const { data, error } = await supabase!.from(ADSPOT_PACKAGES).select("*").order("sort_order");
   if (error) throw error;
-  return { status: 200, body: { packages: data ?? [] } };
+  return { status: 200, body: { packages: (data ?? []).map((row) => mapAdPackage(row as Record<string, unknown>)) } };
 }
 
 async function adminSettings() {

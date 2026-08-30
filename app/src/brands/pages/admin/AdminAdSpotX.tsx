@@ -305,19 +305,19 @@ export default function AdminAdSpotX() {
                     <dl className="grid grid-cols-2 gap-4 text-sm">
                       <div>
                         <dt className="text-muted-foreground">Impressions</dt>
-                        <dd className="text-lg font-semibold">{analytics.impressions.toLocaleString()}</dd>
+                        <dd className="text-lg font-semibold">{(analytics.impressions ?? 0).toLocaleString()}</dd>
                       </div>
                       <div>
                         <dt className="text-muted-foreground">Completions</dt>
-                        <dd className="text-lg font-semibold">{analytics.completions.toLocaleString()}</dd>
+                        <dd className="text-lg font-semibold">{(analytics.completions ?? 0).toLocaleString()}</dd>
                       </div>
                       <div>
                         <dt className="text-muted-foreground">Campaigns routed</dt>
-                        <dd className="text-lg font-semibold">{analytics.campaignsRouted}</dd>
+                        <dd className="text-lg font-semibold">{analytics.campaignsRouted ?? 0}</dd>
                       </div>
                       <div>
                         <dt className="text-muted-foreground">Rev-share (NGN)</dt>
-                        <dd className="text-lg font-semibold">₦{analytics.revenueShareNgn.toLocaleString()}</dd>
+                        <dd className="text-lg font-semibold">₦{(analytics.revenueShareNgn ?? 0).toLocaleString()}</dd>
                       </div>
                       <div className="col-span-2">
                         <dt className="text-muted-foreground">Active slots</dt>

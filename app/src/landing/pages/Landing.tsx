@@ -362,21 +362,24 @@ export default function Landing() {
 
             <div className="grid gap-6 md:grid-cols-3 max-w-4xl mx-auto">
               {packages?.packages?.map((pkg) => {
-                const priceNaira = Number(pkg.price) / 100;
+                const raw = pkg as typeof pkg & { impressions?: number; ad_slots?: number };
+                const slots = raw.adSlots ?? raw.ad_slots ?? 0;
+                const maxImpressions = raw.maxImpressions ?? raw.impressions ?? 0;
+                const priceNaira = Number(pkg.price);
                 return (
                   <Card key={pkg.id} className={pkg.featured ? "border-primary border-2" : ""}>
                     <CardContent className="p-6">
                       <h3 className="text-lg font-semibold">{pkg.name}</h3>
                       <p className="text-sm text-muted-foreground mt-1 mb-4">{pkg.description}</p>
-                      <p className="text-3xl font-bold">₦{priceNaira.toLocaleString()}</p>
+                      <p className="text-3xl font-bold">₦{(Number.isFinite(priceNaira) ? priceNaira / 100 : 0).toLocaleString()}</p>
                       <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
                         <li className="flex items-center gap-2">
                           <Target size={14} className="text-primary shrink-0" />
-                          {pkg.adSlots} campaign slot{pkg.adSlots > 1 ? "s" : ""}
+                          {slots} campaign slot{slots > 1 ? "s" : ""}
                         </li>
                         <li className="flex items-center gap-2">
                           <Users size={14} className="text-primary shrink-0" />
-                          Up to {pkg.maxImpressions.toLocaleString()} views
+                          Up to {(maxImpressions ?? 0).toLocaleString()} views
                         </li>
                       </ul>
                       <a href="/brands/register" className="block mt-6">
