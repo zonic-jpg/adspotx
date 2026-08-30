@@ -24,13 +24,6 @@
 # Hero explainer is a static asset: app/public/hero-demo.mp4 → /hero-demo.mp4
 # (legacy netlify/functions/hero-video.mjs kept but unused)
 
-# Keep Netlify functions reachable (do not SPA-fallback them)
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-  force = false
-
 # SPA deep-link fallback
 [[redirects]]
   from = "/*"
