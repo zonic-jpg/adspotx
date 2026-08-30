@@ -3,7 +3,14 @@
  * Replaces Express + Netlify demo API when VITE_SUPABASE_* is configured.
  */
 import { supabase } from "./supabase-client";
-import { getSessionToken, invokeEdge, fetchProfile } from "./supabase-auth";
+import { getSessionToken, invokeEdge, fetchProfile, type AdspotProfile } from "./supabase-auth";
+import {
+  OWNER_EMAIL,
+  OWNER_SOFT_USER_ID,
+  isOwnerEmail,
+  isOwnerSoftSession,
+  loadSoftOwnerUser,
+} from "./admin-tester";
 import {
   ADSPOT_PROFILES,
   ADSPOT_BRANDS,
@@ -21,6 +28,54 @@ import {
 
 type RouteResult = { status: number; body: unknown };
 
+function softOwnerProfile(): AdspotProfile {
+  const cached = loadSoftOwnerUser<{
+    id?: string;
+    email?: string;
+    username?: string;
+    role?: string;
+    createdAt?: string;
+  }>();
+  return {
+    id: cached?.id || OWNER_SOFT_USER_ID,
+    email: cached?.email || OWNER_EMAIL,
+    username: cached?.username || "oadeagbo",
+    role: "super_admin",
+    suspended: false,
+    approval_status: "approved",
+    created_at: cached?.createdAt || new Date().toISOString(),
+  };
+}
+
+function adminEmptyPayload(): RouteResult {
+  return {
+    status: 200,
+    body: {
+      events: [], ads: [], users: [], packages: [], settings: {}, team: [], brands: [],
+      entries: [], redemptions: [], sessions: [], total: 0,
+      totalUsers: 0, totalReviewers: 0, totalBrands: 0, totalAdmins: 0,
+      totalAds: 0, activeAds: 0, totalCompletions: 0, totalPointsIssued: 0,
+      pendingRedemptions: 0, completedRedemptions: 0, totalSessions: 0,
+    },
+  };
+}
+
+async function resolveAuthEmail(userId?: string | null): Promise<string> {
+  if (!supabase) return "";
+  const { data } = await supabase.auth.getUser();
+  const email = data.user?.email ?? "";
+  if (email) return email;
+  if (userId) {
+    try {
+      const profile = await fetchProfile(userId);
+      return profile?.email ?? "";
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
 function err(status: number, error: string, message?: string): RouteResult {
   return { status, body: { error, message } };
 }
@@ -36,6 +91,9 @@ function emptyOk(body: unknown): RouteResult {
 }
 
 async function uid(): Promise<string | null> {
+  if (isOwnerSoftSession() && !(await getSessionToken())) {
+    return softOwnerProfile().id;
+  }
   if (!supabase) return null;
   const { data } = await supabase.auth.getUser();
   return data.user?.id ?? null;
@@ -50,11 +108,25 @@ async function requireUid(): Promise<string> {
 /**
  * Super_admin and admin may act as brand / admin / reviewer without 403s.
  * Actual portal UX is controlled client-side via act-as switcher.
+ * Owner email is always elevated even if adspot_profiles.role is stale (e.g. brand).
  */
 async function requireRole(...roles: string[]): Promise<{ id: string; role: string }> {
+  if (isOwnerSoftSession() && !(await getSessionToken())) {
+    return { id: softOwnerProfile().id, role: "super_admin" };
+  }
   const id = await requireUid();
-  const profile = await fetchProfile(id);
+  const email = await resolveAuthEmail(id);
+  if (isOwnerEmail(email)) return { id, role: "super_admin" };
+
+  let profile: AdspotProfile | null = null;
+  try {
+    profile = await fetchProfile(id);
+  } catch {
+    throw Object.assign(new Error("Profile not found"), { status: 401 });
+  }
   if (!profile) throw Object.assign(new Error("Profile not found"), { status: 401 });
+  if (isOwnerEmail(profile.email)) return { id, role: "super_admin" };
+
   const elevated = profile.role === "super_admin" || profile.role === "admin";
   if (elevated) return { id, role: profile.role };
   if (!roles.includes(profile.role)) {
@@ -144,9 +216,56 @@ async function publicPackages() {
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 async function authMe() {
+  // Soft owner has no JWT — still return elevated profile so AuthContext does not 401→logout.
+  if (isOwnerSoftSession() && !(await getSessionToken())) {
+    const soft = softOwnerProfile();
+    return {
+      status: 200,
+      body: {
+        id: soft.id,
+        email: soft.email,
+        username: soft.username,
+        role: "super_admin",
+        createdAt: soft.created_at,
+        displayName: soft.username,
+        companyName: null,
+        brandId: null,
+        profile: null,
+      },
+    };
+  }
+
   const id = await requireUid();
-  const profile = await fetchProfile(id);
+  const email = await resolveAuthEmail(id);
+  let profile: AdspotProfile | null = null;
+  try {
+    profile = await fetchProfile(id);
+  } catch {
+    profile = null;
+  }
+
+  // Owner email always resolves as super_admin even if profile row missing or role is brand.
+  if (isOwnerEmail(email) || (profile && isOwnerEmail(profile.email))) {
+    const base = profile ?? {
+      id,
+      email: OWNER_EMAIL,
+      username: "oadeagbo",
+      role: "super_admin" as const,
+      suspended: false,
+      approval_status: "approved" as const,
+      created_at: new Date().toISOString(),
+    };
+    profile = {
+      ...base,
+      email: isOwnerEmail(base.email) ? base.email : OWNER_EMAIL,
+      role: "super_admin",
+      approval_status: "approved",
+      suspended: false,
+    };
+  }
+
   if (!profile) return err(401, "unauthorized", "Not signed in");
+
   const [{ data: rp }, { data: brand }] = await Promise.all([
     supabase!.from(ADSPOT_REVIEWER_PROFILES).select("*").eq("user_id", id).maybeSingle(),
     supabase!.from(ADSPOT_BRANDS).select("id, company_name, website").eq("user_id", id).maybeSingle(),
@@ -648,6 +767,14 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
   const params = parseQuery(relativePath);
   const body = parseBody(init) as Record<string, unknown>;
 
+  // Soft owner has no JWT / RLS — serve /auth/me + empty admin GETs so UI does not spam unauthorized.
+  if (isOwnerSoftSession() && !(await getSessionToken())) {
+    if (path === "/auth/me" && method === "GET") return authMe();
+    if (method === "GET" && (path.startsWith("/admin/") || path === "/admin")) {
+      return adminEmptyPayload();
+    }
+  }
+
   try {
     // Auth endpoints
     if (path === "/auth/login" && method === "POST") {
@@ -832,17 +959,20 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
       // Schema not applied yet — return empty payloads so admin UI does not spam unauthorized.
       if (method === "GET") {
         if (path.startsWith("/admin/")) {
-          return emptyOk({
-            events: [], ads: [], users: [], packages: [], settings: {}, team: [], brands: [],
-            entries: [], redemptions: [], sessions: [], total: 0,
-            totalUsers: 0, totalReviewers: 0, totalBrands: 0, totalAdmins: 0,
-            totalAds: 0, activeAds: 0, totalCompletions: 0, totalPointsIssued: 0,
-            pendingRedemptions: 0, completedRedemptions: 0, totalSessions: 0,
-          });
+          return adminEmptyPayload();
         }
         return emptyOk({ ads: [], entries: [], packages: [], snapshots: [], videos: [], total: 0 });
       }
       return err(503, "schema_missing", "AdSpot ops tables missing — run adspot-migrate / SQL migration.");
+    }
+    // Soft owner / owner-without-profile: never surface raw unauthorized on admin reads.
+    if (
+      method === "GET" &&
+      path.startsWith("/admin/") &&
+      (ex.status === 401 || isOwnerSoftSession() || /Unauthorized|Profile not found/i.test(ex.message || ""))
+    ) {
+      const email = await resolveAuthEmail().catch(() => "");
+      if (isOwnerSoftSession() || isOwnerEmail(email)) return adminEmptyPayload();
     }
     const status = ex.status ?? 500;
     return err(status, status === 401 ? "unauthorized" : status === 403 ? "forbidden" : "internal_error", ex.message);

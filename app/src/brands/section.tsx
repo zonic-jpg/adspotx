@@ -17,7 +17,7 @@ import AdminAdSpotX from "@brands/pages/admin/AdminAdSpotX";
 import Settings from "@brands/pages/Settings";
 
 import { DashboardLayout } from "@brands/components/layout/DashboardLayout";
-import { canActAs, effectivePortal, getActAs } from "@workspace/api-client-react";
+import { canActAs, effectivePortal, getActAs, isOwnerEmail } from "@workspace/api-client-react";
 import { useEffect, useState } from "react";
 
 function useActAsTick() {
@@ -53,8 +53,9 @@ function ProtectedRoute({
   }
   if (!user) return <Redirect to="/login" />;
 
-  const elevated = canActAs(user.role);
-  const portal = effectivePortal(user.role);
+  // Owner email is always elevated even if a stale profile row says brand/reviewer.
+  const elevated = canActAs(user.role) || isOwnerEmail(user.email ?? "");
+  const portal = elevated ? getActAs() : effectivePortal(user.role);
 
   if (adminOnly) {
     if (!elevated) return <Redirect to="/dashboard" />;
@@ -76,7 +77,8 @@ function ProtectedRoute({
 function BrandRoutes() {
   const { user } = useAuth();
   useActAsTick();
-  const portal = user ? effectivePortal(user.role) : "admin";
+  const elevated = !!user && (canActAs(user.role) || isOwnerEmail(user.email ?? ""));
+  const portal = !user ? "admin" : elevated ? getActAs() : effectivePortal(user.role);
 
   return (
     <Switch>

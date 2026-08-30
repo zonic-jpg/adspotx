@@ -2,11 +2,14 @@ import { hasSupabase, supabase } from "./supabase-client";
 import { fetchProfile, invokeEdge, profileToUser } from "./supabase-auth";
 import {
   OWNER_EMAIL,
+  OWNER_SOFT_USER_ID,
+  clearSoftOwnerSession,
   identityToEmail,
   isApproved,
   isOwnerEmail,
   isRevoked,
   isSharedAdminPassword,
+  saveSoftOwnerSession,
 } from "./admin-tester";
 import type { UserProfile } from "./generated/api.schemas";
 
@@ -38,10 +41,19 @@ function normalizeLoginEmail(email: string): { normEmail: string; owner: boolean
   return { normEmail: owner ? OWNER_EMAIL : mapped, owner };
 }
 
-export function postLoginPath(role: UserProfile["role"]): string {
+export function postLoginPath(role: UserProfile["role"], email?: string): string {
+  // Owner always lands in admin — never brand portal — regardless of stale DB role.
+  if (email && isOwnerEmail(email)) return "/brands/admin/dashboard#admintester-queue";
   if (role === "reviewer") return "/earn/dashboard";
   if (role === "admin" || role === "super_admin") return "/brands/admin/dashboard";
   return "/brands/dashboard";
+}
+
+/** Nest-relative path for wouter `/brands` section (avoid `/brands/brands/...`). */
+export function brandsNestLoginPath(role: UserProfile["role"], email?: string): string {
+  if (email && isOwnerEmail(email)) return "/admin/dashboard#admintester-queue";
+  if (role === "admin" || role === "super_admin") return "/admin/dashboard";
+  return "/dashboard";
 }
 
 const OWNER_SOFT_TOKEN = "adspot-owner-local";
@@ -49,7 +61,7 @@ const OWNER_SOFT_TOKEN = "adspot-owner-local";
 function ownerSoftSession(normEmail: string): { user: UserProfile; token: string } {
   // Rubba-style: when Auth/RLS is misconfigured, owner still reaches the approval queue.
   const soft = {
-    id: "00000000-0000-4000-8000-000000000001",
+    id: OWNER_SOFT_USER_ID,
     email: normEmail,
     username: "oadeagbo",
     role: "super_admin" as const,
@@ -57,12 +69,25 @@ function ownerSoftSession(normEmail: string): { user: UserProfile; token: string
     approval_status: "approved" as const,
     created_at: new Date().toISOString(),
   };
-  try {
-    localStorage.setItem("adspot_owner_soft", "1");
-  } catch {
-    /* ignore */
+  const user = profileToUser(soft);
+  saveSoftOwnerSession(user);
+  return { user, token: OWNER_SOFT_TOKEN };
+}
+
+function elevateOwnerProfile(profile: {
+  id: string;
+  email: string;
+  username: string;
+  role: UserProfile["role"];
+  suspended: boolean;
+  approval_status: "approved" | "pending" | "revoked" | null;
+  created_at: string;
+}) {
+  if (!isOwnerEmail(profile.email)) return profile;
+  if (profile.role === "super_admin" || profile.role === "admin") {
+    return { ...profile, approval_status: "approved" as const };
   }
-  return { user: profileToUser(soft), token: OWNER_SOFT_TOKEN };
+  return { ...profile, role: "super_admin" as const, approval_status: "approved" as const };
 }
 
 async function waitForProfile(userId: string, attempts = 6) {
@@ -113,6 +138,7 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
     const m = profErr instanceof Error ? profErr.message : String(profErr);
     // Owner escape hatch for RLS recursion / missing table / any profile read failure.
     if (owner) {
+      clearSoftOwnerSession();
       return {
         user: profileToUser({
           id: data.user.id,
@@ -136,6 +162,7 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   }
   if (!profile) {
     if (owner) {
+      clearSoftOwnerSession();
       return {
         user: profileToUser({
           id: data.user.id,
@@ -163,9 +190,9 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
     throw Object.assign(new Error("Awaiting approval"), { status: 403, code: "pending_approval" });
   }
 
-  if (owner && profile.role !== "super_admin" && profile.role !== "admin") {
-    profile = { ...profile, role: "super_admin", approval_status: "approved" };
-  }
+  profile = elevateOwnerProfile(profile);
+  // Real JWT session — drop soft escape hatch so /auth/me uses the live session.
+  if (owner) clearSoftOwnerSession();
 
   return { user: profileToUser(profile), token: data.session.access_token };
 }
@@ -256,5 +283,6 @@ export async function supabaseRegister(input: {
 }
 
 export async function supabaseSignOut() {
+  clearSoftOwnerSession();
   if (supabase) await supabase.auth.signOut();
 }

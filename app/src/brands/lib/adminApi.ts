@@ -13,6 +13,18 @@ export async function adminApiFetch<T = unknown>(path: string, opts?: RequestIni
 }
 
 export function adminApiErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    // Soft/owner empty fallbacks should not surface raw unauthorized banners.
+    if (/unauthorized/i.test(error.message) && typeof localStorage !== "undefined") {
+      try {
+        if (localStorage.getItem("adspot_owner_soft") === "1") {
+          return "Admin data unavailable in soft session — confirm owner Auth email for live stats.";
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    return error.message;
+  }
   return "Could not load data. Check your connection or try again.";
 }

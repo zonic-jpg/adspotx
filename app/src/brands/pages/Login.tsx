@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@brands/contexts/AuthContext";
-import { supabaseLogin, postLoginPath, hasSupabase } from "@workspace/api-client-react";
+import { supabaseLogin, brandsNestLoginPath, hasSupabase, setActAs } from "@workspace/api-client-react";
 import { Button } from "@brands/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@brands/components/ui/form";
 import { Input } from "@brands/components/ui/input";
@@ -22,6 +22,23 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+function redirectForUser(
+  setLocation: (path: string) => void,
+  user: { email?: string | null; role: "reviewer" | "brand" | "admin" | "super_admin" },
+) {
+  // Owner always → admin queue (never brand portal), regardless of stale DB role.
+  if (isOwnerEmail(user.email ?? "")) {
+    setActAs("admin");
+    setLocation("/admin/dashboard#admintester-queue");
+    return;
+  }
+  if (user.role === "reviewer") {
+    window.location.href = "/earn/dashboard";
+    return;
+  }
+  setLocation(brandsNestLoginPath(user.role, user.email ?? undefined));
+}
+
 export default function Login() {
   const { login: setAuth, user, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
@@ -31,12 +48,7 @@ export default function Login() {
 
   useEffect(() => {
     if (authLoading || !user) return;
-    const owner = isOwnerEmail(user.email ?? "");
-    if (owner && (user.role === "admin" || user.role === "super_admin")) {
-      setLocation("/admin/dashboard#admintester-queue");
-    } else {
-      setLocation(postLoginPath(user.role));
-    }
+    redirectForUser(setLocation, user);
   }, [user, authLoading, setLocation]);
 
   const form = useForm<LoginFormValues>({
@@ -60,17 +72,12 @@ export default function Login() {
     setPending(true);
     try {
       const data = await supabaseLogin(values.email, values.password);
-      if (data.user.role === "reviewer") {
+      if (data.user.role === "reviewer" && !isOwnerEmail(data.user.email ?? "")) {
         setFormError("Reviewer accounts sign in at the Earn portal (/earn/login).");
         return;
       }
       setAuth(data.token, data.user);
-      // Owner → approval queue; useEffect also redirects once context user is set.
-      if (isOwnerEmail(data.user.email ?? "") && (data.user.role === "admin" || data.user.role === "super_admin")) {
-        setLocation("/admin/dashboard#admintester-queue");
-      } else {
-        setLocation(postLoginPath(data.user.role));
-      }
+      redirectForUser(setLocation, data.user);
     } catch (error: unknown) {
       const err = error as Error & { code?: string; status?: number };
       if (err.code === "supabase_not_configured" || err.status === 503) {

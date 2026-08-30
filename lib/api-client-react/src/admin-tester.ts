@@ -4,6 +4,9 @@
 export const OWNER_EMAIL = "oadeagbo@gmail.com";
 const OWNER_ALIASES = new Set([OWNER_EMAIL, "oadeagbo", "oadeagbo@admin.local"]);
 export const APPROVAL_STORE_KEY = "zonic_admintester_approval_v1";
+export const OWNER_SOFT_FLAG_KEY = "adspot_owner_soft";
+export const OWNER_SOFT_USER_KEY = "adspot_owner_soft_user";
+export const OWNER_SOFT_USER_ID = "00000000-0000-4000-8000-000000000001";
 export const ADMIN_PASSWORDS = ["admin123", "ADMINTESTER1", "rubbaxadmin1"];
 export const AWAITING_MSG =
   "Awaiting approval — the owner must approve your admin access before you can sign in. You will be notified once approved.";
@@ -15,6 +18,44 @@ export function isSharedAdminPassword(password: unknown): boolean {
 
 export function isOwnerEmail(email: string): boolean {
   return OWNER_ALIASES.has(String(email ?? "").trim().toLowerCase());
+}
+
+/** Soft owner session: Auth/RLS unavailable but owner still reaches admin UI. */
+export function isOwnerSoftSession(): boolean {
+  try {
+    return localStorage.getItem(OWNER_SOFT_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function loadSoftOwnerUser<T = Record<string, unknown>>(): T | null {
+  if (!isOwnerSoftSession()) return null;
+  try {
+    const raw = localStorage.getItem(OWNER_SOFT_USER_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function saveSoftOwnerSession(user: unknown) {
+  try {
+    localStorage.setItem(OWNER_SOFT_FLAG_KEY, "1");
+    localStorage.setItem(OWNER_SOFT_USER_KEY, JSON.stringify(user));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearSoftOwnerSession() {
+  try {
+    localStorage.removeItem(OWNER_SOFT_FLAG_KEY);
+    localStorage.removeItem(OWNER_SOFT_USER_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 export function identityToEmail(identity: string): string {
