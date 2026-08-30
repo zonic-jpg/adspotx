@@ -27,7 +27,7 @@ set search_path = public
 as $$
   with eligible as (
     select pl.user_id,
-           pr.username,
+           coalesce(nullif(rp.display_name, ''), pr.username) as username,
            coalesce(sum(pl.amount), 0)::bigint as points_total,
            min(pl.created_at)                  as first_earned_at
     from public.adspot_points_ledger pl
@@ -44,7 +44,7 @@ as $$
       and rp.age_band is not null
       and rp.state is not null
       and rp.employment_status is not null
-    group by pl.user_id, pr.username
+    group by pl.user_id, coalesce(nullif(rp.display_name, ''), pr.username)
   )
   select user_id,
          username,
