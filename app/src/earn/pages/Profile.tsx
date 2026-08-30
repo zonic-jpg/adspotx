@@ -1,18 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
+import { customFetch } from "@workspace/api-client-react";
 
-import { API_BASE } from "../../lib/apiBase";
-const API = API_BASE;
-const TOKEN_KEY = "adspot_token";
-
-async function apiFetch(path: string, opts?: RequestInit) {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const r = await fetch(`${API}${path}`, {
+async function apiFetch(path: string, opts?: RequestInit): Promise<any> {
+  const normalized = path.startsWith("/api") ? path : `/api${path.startsWith("/") ? path : `/${path}`}`;
+  return customFetch(normalized, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...(opts?.headers ?? {}) },
   });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
 }
 
 interface Profile {

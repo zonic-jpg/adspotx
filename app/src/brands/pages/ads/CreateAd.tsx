@@ -72,8 +72,12 @@ export default function CreateAd() {
   const { uploadFile, isUploading, progress } = useUpload({
     basePath: "/api/storage",
     getAuthToken: () => localStorage.getItem("adspot_brand_token"),
-    onSuccess: (response: { objectPath: string }) => {
-      const objectUrl = `${window.location.origin}/api/storage${response.objectPath}`;
+    onSuccess: (response: { objectPath: string; publicUrl?: string }) => {
+      const objectUrl =
+        response.publicUrl ||
+        (response.objectPath.startsWith("http")
+          ? response.objectPath
+          : `${window.location.origin}/api/storage${response.objectPath}`);
       form.setValue("assetUrl", objectUrl, { shouldValidate: true });
       toast({ title: "Upload complete", description: "Your file has been uploaded successfully." });
     },

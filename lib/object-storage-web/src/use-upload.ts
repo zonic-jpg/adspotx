@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 
 interface UploadResult {
   objectPath: string;
+  publicUrl?: string;
 }
 
 interface UseUploadOptions {
@@ -25,6 +26,30 @@ export function useUpload(options: UseUploadOptions = {}) {
       setProgress(0);
 
       try {
+        // Prefer Supabase router when configured (FormData → storage bucket).
+        try {
+          const mod = await import("@workspace/api-client-react");
+          if (mod.hasSupabase) {
+            const formData = new FormData();
+            formData.append("file", file);
+            options.onProgress?.(30);
+            setProgress(30);
+            const result = await mod.customFetch<UploadResult>(`${basePath}/uploads`, {
+              method: "POST",
+              body: formData,
+            });
+            setProgress(100);
+            options.onProgress?.(100);
+            options.onSuccess?.(result);
+            return result;
+          }
+        } catch (supabaseUploadErr) {
+          // Fall through to legacy XHR if router/storage unavailable
+          if (supabaseUploadErr instanceof Error && /storage_error|schema_missing|not_found/i.test(supabaseUploadErr.message)) {
+            throw supabaseUploadErr;
+          }
+        }
+
         const token = options.getAuthToken?.();
         const formData = new FormData();
         formData.append("file", file);

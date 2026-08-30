@@ -1,9 +1,4 @@
-const getToken = () => localStorage.getItem("adspot_token") ?? "";
-
-function authHeaders() {
-  const t = getToken();
-  return { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) };
-}
+import { customFetch } from "@workspace/api-client-react";
 
 export interface AdReward {
   id: string;
@@ -30,28 +25,30 @@ export interface RewardClaim {
 }
 
 export async function fetchAdReward(adId: string): Promise<AdReward | null> {
-  const res = await fetch(`/api/ads/${adId}/reward`, { headers: authHeaders() });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data.reward;
+  try {
+    const data = await customFetch<{ reward: AdReward | null }>(`/api/ads/${adId}/reward`);
+    return data.reward;
+  } catch {
+    return null;
+  }
 }
 
 export async function claimReward(rewardId: string): Promise<RewardClaim> {
-  const res = await fetch(`/api/rewards/${rewardId}/claim`, {
+  const data = await customFetch<{ claim: RewardClaim }>(`/api/rewards/${rewardId}/claim`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || "Failed to claim reward");
-  }
-  return (await res.json()).claim;
+  return data.claim;
 }
 
 export async function fetchMyRewards(): Promise<RewardClaim[]> {
-  const res = await fetch("/api/me/rewards", { headers: authHeaders() });
-  if (!res.ok) return [];
-  return (await res.json()).claims ?? [];
+  try {
+    const data = await customFetch<{ claims: RewardClaim[] }>("/api/me/rewards");
+    return data.claims ?? [];
+  } catch {
+    return [];
+  }
 }
 
 export async function createAdReward(adId: string, data: {
@@ -62,16 +59,18 @@ export async function createAdReward(adId: string, data: {
   discountCode?: string;
   maxClaims?: number;
 }): Promise<void> {
-  const res = await fetch(`/api/brands/ads/${adId}/rewards`, {
+  await customFetch(`/api/brands/ads/${adId}/rewards`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to create reward");
 }
 
 export async function fetchBrandAdRewards(adId: string) {
-  const res = await fetch(`/api/brands/ads/${adId}/rewards`, { headers: authHeaders() });
-  if (!res.ok) return [];
-  return (await res.json()).rewards ?? [];
+  try {
+    const data = await customFetch<{ rewards: unknown[] }>(`/api/brands/ads/${adId}/rewards`);
+    return data.rewards ?? [];
+  } catch {
+    return [];
+  }
 }

@@ -25,6 +25,8 @@ import {
   ADSPOT_PLATFORM_SETTINGS,
   ADSPOT_LEADERBOARD_SNAPSHOTS,
 } from "./adspot-tables";
+import * as partnersApi from "./supabase-partners";
+import * as ops from "./supabase-ops";
 
 type RouteResult = { status: number; body: unknown };
 
@@ -773,6 +775,10 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
     if (method === "GET" && (path.startsWith("/admin/") || path === "/admin")) {
       return adminEmptyPayload();
     }
+    // Partners still work via localStorage seed so AdSpotX admin + portal demos stay usable.
+    if (path.startsWith("/partners")) {
+      /* fall through — partnersApi uses local store when tables/JWT unavailable */
+    }
   }
 
   try {
@@ -793,33 +799,13 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
       });
       return { status: 201, body: result };
     }
+    if (path === "/auth/profile" && method === "GET") {
+      const userId = await requireUid();
+      return ops.authProfileGet(userId);
+    }
     if (path === "/auth/profile" && method === "PATCH") {
       const userId = await requireUid();
-      const patch: Record<string, unknown> = {
-        user_id: userId,
-        gender: body.gender,
-        age_band: body.ageBand ?? body.age_band,
-        state: body.state,
-        employment_status: body.employmentStatus ?? body.employment_status,
-      };
-      if (body.displayName != null || body.display_name != null) {
-        patch.display_name = String(body.displayName ?? body.display_name ?? "").trim() || null;
-      }
-      const { data, error } = await supabase!
-        .from(ADSPOT_REVIEWER_PROFILES)
-        .upsert(patch, { onConflict: "user_id" })
-        .select("*")
-        .maybeSingle();
-      if (error) throw error;
-      return {
-        status: 200,
-        body: {
-          ...(data ?? {}),
-          displayName: (data as { display_name?: string } | null)?.display_name ?? null,
-          ageBand: (data as { age_band?: string } | null)?.age_band,
-          employmentStatus: (data as { employment_status?: string } | null)?.employment_status,
-        },
-      };
+      return ops.authProfilePatch(userId, body);
     }
     if (path === "/auth/me" && method === "GET") return authMe();
     if (path === "/healthz" && method === "GET") return { status: 200, body: { status: "ok", backend: "supabase" } };
@@ -852,13 +838,100 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
     if (path === "/brands/ads" && method === "GET") return brandAdsList();
     if (path === "/brands/ads" && method === "POST") return brandCreateAd(body);
     if (path === "/brands/stats/overview" && method === "GET") return brandOverview();
-    const brandAdMatch = path.match(/^\/brands\/ads\/([^/]+)$/);
-    if (brandAdMatch && method === "GET") return brandAdDetail(brandAdMatch[1]);
+    if (path === "/brands/analytics" && method === "GET") {
+      const { id } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandAnalytics(id, params);
+    }
+    if (path === "/brands/analytics/comments" && method === "GET") {
+      const { id } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandAnalyticsComments(id, params);
+    }
+    if (path === "/brands/analytics/deep" && method === "GET") {
+      const { id } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandAnalyticsDeep(id, params);
+    }
+    if (path === "/brands/analytics/filters" && method === "GET") {
+      const { id } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandAnalyticsFilters(id);
+    }
+    const brandRewardsMatch = path.match(/^\/brands\/ads\/([^/]+)\/rewards$/);
+    if (brandRewardsMatch && method === "GET") {
+      await requireRole("brand", "admin", "super_admin");
+      return ops.brandListRewards(brandRewardsMatch[1]);
+    }
+    if (brandRewardsMatch && method === "POST") {
+      const { id, role } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandCreateReward(brandRewardsMatch[1], id, role, body);
+    }
+    const brandQuestionsMatch = path.match(/^\/brands\/ads\/([^/]+)\/questions$/);
+    if (brandQuestionsMatch && method === "POST") {
+      const { id, role } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandAddQuestion(brandQuestionsMatch[1], id, role, body);
+    }
     const brandStatsMatch = path.match(/^\/brands\/ads\/([^/]+)\/stats$/);
     if (brandStatsMatch && method === "GET") return brandAdStats(brandStatsMatch[1]);
+    const brandAdMatch = path.match(/^\/brands\/ads\/([^/]+)$/);
+    if (brandAdMatch && method === "GET") return brandAdDetail(brandAdMatch[1]);
+    if (brandAdMatch && method === "PATCH") {
+      const { id, role } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandUpdateAd(brandAdMatch[1], id, role, body);
+    }
+    if (brandAdMatch && method === "DELETE") {
+      const { id, role } = await requireRole("brand", "admin", "super_admin");
+      return ops.brandDeleteAd(brandAdMatch[1], id, role);
+    }
+
+    // Partners (AdSpotX)
+    if (path === "/partners" && method === "GET") {
+      if (!(isOwnerSoftSession() && !(await getSessionToken()))) {
+        await requireRole("admin", "super_admin");
+      }
+      return partnersApi.partnersList();
+    }
+    if (path === "/partners" && method === "POST") {
+      // Soft owner → local store. Authenticated admin preferred; any signed-in user may onboard.
+      if (!(isOwnerSoftSession() && !(await getSessionToken()))) {
+        try {
+          await requireRole("admin", "super_admin");
+        } catch {
+          await requireUid();
+        }
+      }
+      return partnersApi.partnersCreate(body);
+    }
+    const partnerActivate = path.match(/^\/partners\/([^/]+)\/integration\/activate$/);
+    if (partnerActivate && method === "POST") return partnersApi.partnersIntegrationActivate(partnerActivate[1]);
+    const partnerDeactivate = path.match(/^\/partners\/([^/]+)\/integration\/deactivate$/);
+    if (partnerDeactivate && method === "POST") return partnersApi.partnersIntegrationDeactivate(partnerDeactivate[1]);
+    const partnerIntegration = path.match(/^\/partners\/([^/]+)\/integration$/);
+    if (partnerIntegration && method === "GET") return partnersApi.partnersIntegrationGet(partnerIntegration[1]);
+    const partnerAnalytics = path.match(/^\/partners\/([^/]+)\/analytics$/);
+    if (partnerAnalytics && method === "GET") return partnersApi.partnersAnalytics(partnerAnalytics[1]);
+    const partnerGet = path.match(/^\/partners\/([^/]+)$/);
+    if (partnerGet && method === "GET") return partnersApi.partnersGet(partnerGet[1]);
+
+    // Rewards (reviewer)
+    const adRewardMatch = path.match(/^\/ads\/([^/]+)\/reward$/);
+    if (adRewardMatch && method === "GET") {
+      const userId = await requireUid();
+      return ops.adsRewardGet(adRewardMatch[1], userId);
+    }
+    if (path === "/me/rewards" && method === "GET") {
+      const userId = await requireUid();
+      return ops.meRewards(userId);
+    }
+    const rewardClaimMatch = path.match(/^\/rewards\/([^/]+)\/claim$/);
+    if (rewardClaimMatch && method === "POST") {
+      const { id } = await requireRole("reviewer", "admin", "super_admin");
+      return ops.claimRewardDirect(rewardClaimMatch[1], id);
+    }
 
     // Admin reads
     if (path === "/admin/events" && method === "GET") return adminEvents(params);
+    if (path === "/admin/events/export" && method === "GET") {
+      await requireRole("admin", "super_admin");
+      return ops.adminEventsExport(params);
+    }
     if (path === "/admin/ads" && method === "GET") return adminAds(params);
     if (path === "/admin/users" && method === "GET") return adminUsers(params);
     if (path === "/admin/packages" && method === "GET") return adminPackages();
@@ -869,6 +942,48 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
     if (path === "/admin/points" && method === "GET") return adminPoints(params);
     if (path === "/admin/redemptions" && method === "GET") return adminRedemptions(params);
     if (path === "/admin/sessions" && method === "GET") return adminSessions(params);
+    if (path === "/admin/health" && method === "GET") {
+      await requireRole("admin", "super_admin");
+      return ops.adminHealth();
+    }
+
+    const adminAdQuestions = path.match(/^\/admin\/ads\/([^/]+)\/questions$/);
+    if (adminAdQuestions && method === "GET") {
+      await requireRole("admin", "super_admin");
+      return ops.adminGetAdQuestions(adminAdQuestions[1]);
+    }
+    if (adminAdQuestions && method === "POST") {
+      await requireRole("admin", "super_admin");
+      return ops.adminAddQuestion(adminAdQuestions[1], body);
+    }
+    const adminAdStatus = path.match(/^\/admin\/ads\/([^/]+)\/status$/);
+    if (adminAdStatus && method === "PATCH") {
+      await requireRole("admin", "super_admin");
+      return ops.adminPatchAdStatus(adminAdStatus[1], String(body.status ?? ""));
+    }
+    const adminAdId = path.match(/^\/admin\/ads\/([^/]+)$/);
+    if (adminAdId && method === "PUT") {
+      await requireRole("admin", "super_admin");
+      return ops.adminUpdateAd(adminAdId[1], body);
+    }
+    if (adminAdId && method === "DELETE") {
+      await requireRole("admin", "super_admin");
+      return ops.adminDeleteAd(adminAdId[1]);
+    }
+    const adminQuestion = path.match(/^\/admin\/questions\/([^/]+)$/);
+    if (adminQuestion && method === "PATCH") {
+      await requireRole("admin", "super_admin");
+      return ops.adminPatchQuestion(adminQuestion[1], body);
+    }
+    if (adminQuestion && method === "DELETE") {
+      await requireRole("admin", "super_admin");
+      return ops.adminDeleteQuestion(adminQuestion[1]);
+    }
+    const adminBrandPatch = path.match(/^\/admin\/brands\/([^/]+)$/);
+    if (adminBrandPatch && method === "PATCH") {
+      await requireRole("admin", "super_admin");
+      return ops.adminPatchBrand(adminBrandPatch[1], body);
+    }
 
     // Trusted writes → Edge Functions
     if (path === "/admin/points/adjust" && method === "POST") {
@@ -904,22 +1019,21 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
       await requireRole("brand", "admin", "super_admin");
       return { status: 200, body: await invokeEdge("purchase-package", { packageId: purchaseMatch[1] }) };
     }
-    const rewardClaimMatch = path.match(/^\/rewards\/([^/]+)\/claim$/);
-    if (rewardClaimMatch && method === "POST") {
-      await requireRole("reviewer");
-      return { status: 200, body: await invokeEdge("claim-reward", { rewardId: rewardClaimMatch[1] }) };
-    }
     if (path === "/brands/analytics/organize-comments" && method === "POST") {
       await requireRole("brand", "admin", "super_admin");
-      return { status: 200, body: await invokeEdge("organize-comments", body) };
+      try {
+        return { status: 200, body: await invokeEdge("organize-comments", body) };
+      } catch {
+        return { status: 200, body: { themes: [] } };
+      }
     }
     if (path === "/brands/analytics/ai-summary" && method === "POST") {
       await requireRole("brand", "admin", "super_admin");
-      return { status: 200, body: await invokeEdge("ai-summary", body) };
+      return ops.aiSummary(body);
     }
     if (path === "/storage/uploads" && method === "POST") {
       await requireRole("brand", "admin", "super_admin");
-      return { status: 200, body: await invokeEdge("storage-upload", body) };
+      return ops.storageUpload(init);
     }
 
     // Admin packages/settings writes (safe with RLS — direct)

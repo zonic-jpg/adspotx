@@ -380,6 +380,9 @@ importers:
 
   lib/object-storage-web:
     dependencies:
+      '@workspace/api-client-react':
+        specifier: workspace:*
+        version: link:../api-client-react
       react:
         specifier: '>=18'
         version: 19.1.0
@@ -390,6 +393,9 @@ importers:
 
   partner-portal:
     dependencies:
+      '@workspace/api-client-react':
+        specifier: workspace:*
+        version: link:../lib/api-client-react
       lucide-react:
         specifier: 'catalog:'
         version: 0.545.0(react@19.1.0)

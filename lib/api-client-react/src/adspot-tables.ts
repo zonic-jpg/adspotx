@@ -15,6 +15,18 @@ export const ADSPOT_EVENTS_LOG = "adspot_events_log";
 export const ADSPOT_PLATFORM_SETTINGS = "adspot_platform_settings";
 export const ADSPOT_LEADERBOARD_SNAPSHOTS = "adspot_leaderboard_snapshots";
 
+/** AdSpotX network partners (preferred). Legacy `network_partners` is a fallback. */
+export const ADSPOT_PARTNERS = "adspot_partners";
+export const ADSPOT_PARTNER_INTEGRATIONS = "adspot_partner_integrations";
+export const LEGACY_NETWORK_PARTNERS = "network_partners";
+export const LEGACY_PARTNER_INTEGRATIONS = "partner_integrations";
+
+/** Brand incentive rewards attached to ads. */
+export const ADSPOT_AD_REWARDS = "adspot_ad_rewards";
+export const ADSPOT_REWARD_CLAIMS = "adspot_reward_claims";
+
+export const ADSPOT_STORAGE_BUCKET = "adspot-assets";
+
 /** @deprecated Use ADSPOT_* constants — kept as aliases during migration. */
 export const ADS = ADSPOT_ADS;
 export const QUESTIONS = ADSPOT_QUESTIONS;

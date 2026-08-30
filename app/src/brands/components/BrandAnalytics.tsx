@@ -4,18 +4,10 @@ import {
   ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
   RadialBarChart, RadialBar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { customFetch } from "@workspace/api-client-react";
 
-import { API_BASE } from "../../lib/apiBase";
-const API = API_BASE;
-const TOKEN_KEY = "adspot_brand_token";
-
-async function apiGet(path: string) {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const r = await fetch(`${API}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+async function apiGet<T = any>(path: string): Promise<T> {
+  return customFetch(path.startsWith("/api") ? path : `/api${path}`);
 }
 
 const CHART = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
@@ -275,7 +267,7 @@ export function BrandAnalytics() {
                   <PieChart>
                     <Pie data={data.breakdowns.maritalStatus.map((b) => ({ name: lbl(b.key), value: b.completions }))}
                       dataKey="value" nameKey="name" outerRadius={80} isAnimationActive={live}>
-                      {data.breakdowns.maritalStatus.map((_, i) => <Cell key={i} fill={CHART[i % CHART.length]} />)}
+                      {data.breakdowns.maritalStatus.map((_: { key: string }, i: number) => <Cell key={i} fill={CHART[i % CHART.length]} />)}
                     </Pie>
                     <Tooltip contentStyle={tooltipStyle} />
                     <Legend wrapperStyle={{ fontSize: 12 }} />

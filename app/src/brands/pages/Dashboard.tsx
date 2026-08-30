@@ -25,10 +25,8 @@ import {
 } from "lucide-react";
 import { AISummaryButton } from "@brands/components/AISummaryPanel";
 import { BrandAnalytics } from "@brands/components/BrandAnalytics";
+import { customFetch } from "@workspace/api-client-react";
 
-import { API_BASE } from "../../lib/apiBase";
-const API = API_BASE;
-const TOKEN_KEY = "adspot_brand_token";
 const ORANGE = "#f97316";
 // Vibrant modern palette (multi-hue) for lively, distinct data series.
 const COLORS = ["#f97316", "#6366f1", "#06b6d4", "#ec4899", "#22c55e", "#eab308", "#8b5cf6", "#f43f5e"];
@@ -63,18 +61,9 @@ type Theme = {
   commentIndices?: number[];
 };
 
-async function apiFetch(path: string, opts?: RequestInit) {
-  const token = localStorage.getItem(TOKEN_KEY);
-  const r = await fetch(`${API}${path}`, {
-    ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(opts?.headers ?? {}),
-    },
-  });
-  if (!r.ok) throw new Error(await r.text());
-  return r.json();
+async function apiFetch(path: string, opts?: RequestInit): Promise<any> {
+  const normalized = path.startsWith("/api") ? path : `/api${path.startsWith("/") ? path : `/${path}`}`;
+  return customFetch(normalized, opts);
 }
 
 function buildQS(filters: Filters) {

@@ -2,8 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { Sheet, SheetContent } from "@brands/components/ui/sheet";
 import { Button } from "@brands/components/ui/button";
 import { Sparkles, Download, Printer, RefreshCw, AlertCircle } from "lucide-react";
-
-const TOKEN_KEY = "adspot_brand_token";
+import { customFetch } from "@workspace/api-client-react";
 
 interface Props {
   adId?: string;
@@ -160,50 +159,20 @@ export function AISummaryButton({ adId, adTitle }: Props) {
     generatedAt.current = new Date();
 
     try {
-      const token   = localStorage.getItem(TOKEN_KEY);
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const data = await customFetch<{ summary?: string; content?: string } | string>(
+        "/api/brands/analytics/ai-summary",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ adId }),
+          signal: ac.signal,
+        } as RequestInit,
+      );
 
-      const res = await fetch("/api/brands/analytics/ai-summary", {
-        method: "POST",
-        credentials: "include",
-        headers,
-        body: JSON.stringify({ adId }),
-        signal: ac.signal,
-      });
-
-      if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        const raw = await res.text().catch(() => "");
-        if (raw) {
-          try {
-            const body = JSON.parse(raw) as { message?: string; error?: string };
-            msg = body.message || body.error || msg;
-          } catch {
-            msg = raw;
-          }
-        }
-        throw new Error(msg);
-      }
-
-      const reader  = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let   buf     = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          try {
-            const d = JSON.parse(line.slice(6));
-            if (d.content) setSummary(prev => prev + d.content);
-            if (d.error)   setError(d.error);
-          } catch { /* partial chunk */ }
-        }
+      if (typeof data === "string") {
+        setSummary(data);
+      } else if (data && typeof data === "object") {
+        setSummary(data.summary ?? data.content ?? JSON.stringify(data));
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {

@@ -45,11 +45,7 @@ export default function Dashboard() {
   const { data: leaderboard } = useGetLeaderboard();
   const { data: eligibility } = useQuery<{ eligible: boolean; missingFields: string[] }>({
     queryKey: ["lb-eligibility"],
-    queryFn: async () => {
-      const token = localStorage.getItem("adspot_token");
-      const r = await fetch("/api/leaderboard/eligibility", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      return r.json();
-    },
+    queryFn: () => customFetch("/api/leaderboard/eligibility"),
   });
   const { data: adFeed, isLoading: loadingFeed } = useGetAdFeed();
   const [showEarnings, setShowEarnings] = useState(false);
