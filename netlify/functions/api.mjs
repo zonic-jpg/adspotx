@@ -1,14 +1,11 @@
 /**
- * Netlify Functions catch-all for /api/* when the SPA is on Netlify without a
- * separate Node host. Provides demo auth + admin read APIs so owner login works
- * immediately (email/password). Full Postgres-backed API still lives in server/.
+ * Netlify Functions catch-all for /api/* (legacy shim).
  *
- * Credentials:
- *   oadeagbo@gmail.com / password123  → super_admin (owner)
- *   oadeagbo@gmail.com / admin123|ADMINTESTER1|rubbaxadmin1 → super_admin (owner)
- *   any other email / admin passwords → 403 pending_approval (no token)
- *   admin@adspot.demo / password123    → admin
- * Google: POST /auth/google with GIS idToken (verifies via Google tokeninfo).
+ * AUTH: password sign-in here is RETIRED. The SPA authenticates via Supabase
+ * Auth; owner→super_admin is enforced by the DB signup trigger
+ * (adspot_handle_new_user). The previous hardcoded owner/admin master passwords
+ * were a live backdoor and have been removed — no password grants a session here
+ * anymore. Remaining endpoints are non-auth reads / legacy registered-user login.
  */
 import crypto from "node:crypto";
 import { MOCK_VIDEO_ADS } from "./mock-videos.mjs";
@@ -22,18 +19,18 @@ import {
   verifyPassword,
 } from "./user-store.mjs";
 
-const DEMO_PASSWORD = "password123";
-const MASTER_ADMIN_PASSWORD = "admin123";
-// Owner + one of these → super_admin session. Any other email → pending_approval.
-// ADMINTESTER1 is the uniform cross-platform tester password; legacy values kept
-// as aliases. Matching is case-insensitive (see isAdminPassword).
-const ADMIN_PASSWORDS = [MASTER_ADMIN_PASSWORD, "ADMINTESTER1", "rubbaxadmin1"];
+// SECURITY: hardcoded owner/admin master passwords and the shared demo password
+// were removed — they were a live backdoor that minted super_admin sessions.
+// Authentication is handled by Supabase Auth; this shim no longer signs anyone
+// in from a password.
+const ADMIN_PASSWORDS = [];
 const AWAITING_MSG =
   "Awaiting approval — the owner must approve your admin access before you can sign in. You will be notified once approved.";
 
-function isAdminPassword(password) {
-  const candidate = String(password ?? "").trim().toLowerCase();
-  return ADMIN_PASSWORDS.some((p) => p.toLowerCase() === candidate);
+function isAdminPassword() {
+  // SECURITY: master/admin password sign-in removed. Admin and owner access is
+  // granted only by role in Supabase (adspot_profiles.role), never a password.
+  return false;
 }
 const OWNER_EMAIL = "oadeagbo@gmail.com";
 const OWNER_ALIASES = new Set([OWNER_EMAIL, "oadeagbo", "oadeagbo@admin.local"]);
@@ -374,28 +371,11 @@ export async function handler(event) {
         return respond(400, { error: "validation_error", message: "Email and password required" });
       }
       const identity = normalizeLoginIdentity(String(rawIdentity));
-      // Admin/tester passwords MUST be checked before demo DB password — owner always wins.
-      if (isAdminPassword(password)) {
-        if (!isOwnerIdentity(rawIdentity)) {
-          return respond(403, {
-            error: "pending_approval",
-            status: "pending",
-            message: AWAITING_MSG,
-          });
-        }
-        const session = superAdminSessionFromIdentity(OWNER_EMAIL);
-        return respond(200, authResponse(session));
-      }
+      // SECURITY: the hardcoded owner/admin master-password path and the shared
+      // demo-password auto-login were removed (they were a live backdoor).
+      // Admin and owner access is granted only by role in Supabase, never here.
 
-      // Seeded/demo accounts MUST succeed without touching Blobs (live v5 500ed here).
-      if (password === DEMO_PASSWORD) {
-        const seeded = findSeededUser(identity.email) || findSeededUser(identity.username);
-        if (seeded) {
-          return respond(200, authResponse(seeded));
-        }
-      }
-
-      // Registered accounts (Netlify Blobs) — optional; never 500 if Blobs hang/fail.
+      // Registered accounts (Netlify Blobs) — bcrypt-verified; never 500 if Blobs hang/fail.
       try {
         const registered = await findRegisteredUser(identity.email);
         if (!registered && identity.username) {
