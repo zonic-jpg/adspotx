@@ -14,8 +14,8 @@
   NODE_VERSION = "20"
   # Public anon keys — bake into SPA (same Zonic Supabase project as MyYangaX).
   # Override in Netlify UI if the project moves.
-  VITE_SUPABASE_URL = "https://bnfbgqtdwyiockkxvapp.supabase.co"
-  VITE_SUPABASE_ANON_KEY = "sb_publishable_9nU0w-V7QWrtqvuP2Iqihg_6Zsf2LSf"
+  # VITE_SUPABASE_URL — set via Netlify UI/API env (do not hardcode)
+  # VITE_SUPABASE_ANON_KEY — set via Netlify UI/API env (do not hardcode)
 
 [functions]
   directory = "netlify/functions"

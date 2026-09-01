@@ -17,8 +17,8 @@ jobs:
       - name: Build SPA with Supabase
         env:
           # Public anon keys (same as netlify.toml). Override via secrets if project moves.
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || 'https://bnfbgqtdwyiockkxvapp.supabase.co' }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_9nU0w-V7QWrtqvuP2Iqihg_6Zsf2LSf' }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL != '' && secrets.VITE_SUPABASE_URL || 'https://ukhdjvbzbidxoieauhpr.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY != '' && secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_IOtt2j4pbij2NsubjfBPNQ_O9Z3O_mS' }}
         run: |
           pnpm --filter @workspace/adspot-unified run build
           grep -q 'supabase.co' app/dist/assets/*.js
