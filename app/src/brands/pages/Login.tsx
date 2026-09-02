@@ -11,6 +11,7 @@ import { Input } from "@brands/components/ui/input";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
 import { isSharedAdminPassword, resolveAdminGateLogin, isOwnerEmail } from "../../lib/adminTesterApproval";
+import { PasswordRecovery } from "../../components/PasswordRecovery";
 
 const MISSING_SUPABASE_MSG =
   "Sign-in is unavailable — Supabase is not configured on this deploy. Rebuild with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
@@ -197,6 +198,10 @@ export default function Login() {
                     "Sign in"
                   )}
                 </Button>
+
+                <a href="#forgot" className="block text-center text-xs text-primary hover:underline mt-3">
+                  Forgot password?
+                </a>
               </form>
             </Form>
 
@@ -215,6 +220,7 @@ export default function Login() {
           </p>
         </div>
       </main>
+      <PasswordRecovery brand="AdSpot" />
     </div>
   );
 }

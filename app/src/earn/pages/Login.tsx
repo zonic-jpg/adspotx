@@ -11,6 +11,7 @@ import { useAuth } from "@earn/contexts/AuthContext";
 import { ApiError } from "@workspace/api-client-react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
+import { PasswordRecovery } from "../../components/PasswordRecovery";
 
 const formSchema = z.object({
   email:    z.string().email("Enter a valid email"),
@@ -161,6 +162,9 @@ export default function Login() {
                     "Sign in"
                   )}
                 </button>
+                <a href="#forgot" className="block text-center text-xs text-[#16a34a] hover:underline mt-3">
+                  Forgot password?
+                </a>
               </form>
             </Form>
           </div>
@@ -172,6 +176,7 @@ export default function Login() {
           </p>
         </div>
       </main>
+      <PasswordRecovery brand="AdSpot Earn" />
     </div>
   );
 }
