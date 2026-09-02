@@ -25,18 +25,43 @@ const questionSchema = z.object({
   options: z.array(z.string()).optional(),
 });
 
-const createAdSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters"),
-  description: z.string().optional(),
-  assetUrl: z.string().url("Must be a valid URL"),
-  assetType: z.enum(["image", "video"]),
-  minWatchSeconds: z.coerce.number().min(1).default(15),
-  pointReward: z.coerce.number().min(1).default(10),
-  proverbQuestion: z.string().optional(),
-  proverbAnswer: z.string().optional(),
-  proverbBonusPoints: z.coerce.number().min(0).max(100).default(5),
-  questions: z.array(questionSchema).max(10, "Maximum 10 questions allowed").default([]),
-});
+const createAdSchema = z
+  .object({
+    title: z.string().min(3, "Title must be at least 3 characters"),
+    description: z.string().optional(),
+    assetUrl: z.string().optional().default(""),
+    assetType: z.enum(["image", "video"]),
+    minWatchSeconds: z.coerce.number().min(1).default(15),
+    pointReward: z.coerce.number().min(1).default(10),
+    proverbQuestion: z.string().optional(),
+    proverbAnswer: z.string().optional(),
+    proverbBonusPoints: z.coerce.number().min(0).max(100).default(5),
+    questions: z.array(questionSchema).max(10, "Maximum 10 questions allowed").default([]),
+  })
+  .superRefine((vals, ctx) => {
+    const url = String(vals.assetUrl || "").trim();
+    if (!url) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assetUrl"],
+        message: "Upload a file or paste a media URL",
+      });
+      return;
+    }
+    // Accept absolute URLs and same-origin storage paths from local upload.
+    const ok =
+      /^https?:\/\//i.test(url) ||
+      url.startsWith("/") ||
+      url.startsWith("blob:") ||
+      url.startsWith("data:");
+    if (!ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assetUrl"],
+        message: "Must be a valid URL or uploaded file path",
+      });
+    }
+  });
 
 type CreateAdFormValues = z.infer<typeof createAdSchema>;
 
@@ -45,7 +70,7 @@ export default function CreateAd() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createMutation = useCreateBrandAd();
-  const [assetInputMode, setAssetInputMode] = useState<"url" | "upload">("url");
+  const [assetInputMode, setAssetInputMode] = useState<"url" | "upload">("upload");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
   const form = useForm<CreateAdFormValues>({
@@ -162,6 +187,15 @@ export default function CreateAd() {
   const nextStep = async () => {
     let valid = false;
     if (step === 1) {
+      if (assetInputMode === "upload" && isUploading) {
+        toast({ title: "Still uploading", description: "Wait for the file upload to finish.", variant: "destructive" });
+        return;
+      }
+      if (assetInputMode === "upload" && !String(form.getValues("assetUrl") || "").trim()) {
+        form.setError("assetUrl", { message: "Upload a file before continuing" });
+        toast({ title: "File required", description: "Upload a local image or video, or switch to Paste URL.", variant: "destructive" });
+        return;
+      }
       valid = await form.trigger(["title", "assetUrl", "assetType", "minWatchSeconds", "pointReward"]);
     } else if (step === 2) {
       valid = await form.trigger(["questions"]);

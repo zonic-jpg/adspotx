@@ -1,5 +1,8 @@
 import React from "react";
 import { Link } from "wouter";
+import { siblingZonicApps } from "../../lib/zonicLinks";
+
+const SIBLINGS = siblingZonicApps("adspotx");
 
 export function Footer() {
   return (
@@ -35,6 +38,19 @@ export function Footer() {
               <li><a href="/partners" className="text-white/50 hover:text-primary transition-colors" data-testid="footer-adspotx-link">AdSpotX Network</a></li>
             </ul>
           </div>
+        </div>
+
+        <div className="mt-12 border-t border-white/10 pt-8">
+          <h3 className="mb-4 font-display text-sm font-bold uppercase tracking-wide text-white/40">Other ZonicMe products</h3>
+          <ul className="flex flex-wrap gap-x-6 gap-y-3">
+            {SIBLINGS.map((a) => (
+              <li key={a.id}>
+                <a href={a.href} target="_blank" rel="noopener noreferrer" className="text-white/50 hover:text-primary transition-colors">
+                  {a.label}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
 
         <div className="mt-16 flex flex-col items-center justify-between border-t border-white/10 pt-8 md:flex-row">

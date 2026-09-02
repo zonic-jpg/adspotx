@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REF = process.env.SUPABASE_PROJECT_REF || "bnfbgqtdwyiockkxvapp";
+const REF = process.env.SUPABASE_PROJECT_REF || "ukhdjvbzbidxoieauhpr";
 const TOK = process.env.SUPABASE_ACCESS_TOKEN;
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 

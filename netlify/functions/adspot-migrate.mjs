@@ -1,15 +1,15 @@
 /**
  * Netlify function: apply AdSpot ops schema + seed via Supabase Management API.
  * Auth: owner JWT (Supabase) OR x-adspot-migrate-key header matching MIGRATE_KEY env.
- * Env: SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF (default bnfbgqtdwyiockkxvapp)
+ * Env: SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF (default ukhdjvbzbidxoieauhpr)
  */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const OWNER = "oadeagbo@gmail.com";
-const REF = process.env.SUPABASE_PROJECT_REF || "bnfbgqtdwyiockkxvapp";
-const SB_URL = process.env.VITE_SUPABASE_URL || "https://bnfbgqtdwyiockkxvapp.supabase.co";
+const REF = process.env.SUPABASE_PROJECT_REF || "ukhdjvbzbidxoieauhpr";
+const SB_URL = process.env.VITE_SUPABASE_URL || "https://ukhdjvbzbidxoieauhpr.supabase.co";
 const ANON = process.env.VITE_SUPABASE_ANON_KEY || "";
 
 function cors(status, body) {
