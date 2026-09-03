@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +16,7 @@ import { Progress } from "@brands/components/ui/progress";
 import { useToast } from "@brands/hooks/use-toast";
 import { ChevronLeft, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, Upload, Link, X } from "lucide-react";
 import { normalizeAssetPayload } from "../../../lib/adAssetNormalize";
+import { publicError } from "../../../lib/publicMessage";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -72,6 +73,9 @@ export default function CreateAd() {
   const createMutation = useCreateBrandAd();
   const [assetInputMode, setAssetInputMode] = useState<"url" | "upload">("upload");
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewKind, setPreviewKind] = useState<"image" | "video" | null>(null);
 
   const form = useForm<CreateAdFormValues>({
     resolver: zodResolver(createAdSchema),
@@ -107,17 +111,21 @@ export default function CreateAd() {
       toast({ title: "Upload complete", description: "Your file has been uploaded successfully." });
     },
     onError: (error: Error) => {
-      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+      // Storage/driver text ("Bucket not found", "row-level security…") means
+      // nothing to a brand — say what they can do instead.
+      toast({
+        title: "Upload failed",
+        description: publicError(error, "We couldn't upload that file. Please try again."),
+        variant: "destructive",
+      });
     },
   });
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const acceptFile = async (file: File | undefined | null) => {
     if (!file) return;
 
     if (file.size > MAX_FILE_SIZE) {
       toast({ title: "File too large", description: "Maximum file size is 100 MB.", variant: "destructive" });
-      e.target.value = "";
       return;
     }
 
@@ -125,7 +133,6 @@ export default function CreateAd() {
     const isVideo = file.type.startsWith("video/");
     if (!isImage && !isVideo) {
       toast({ title: "Unsupported file type", description: "Please upload an image or video file.", variant: "destructive" });
-      e.target.value = "";
       return;
     }
 
@@ -136,14 +143,40 @@ export default function CreateAd() {
     }
 
     setUploadedFileName(file.name);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+    setPreviewKind(isImage ? "image" : "video");
     form.setValue("assetUrl", "", { shouldValidate: false });
     await uploadFile(file);
   };
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await acceptFile(e.target.files?.[0]);
+    e.target.value = "";
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (isUploading) return;
+    await acceptFile(e.dataTransfer.files?.[0]);
+  };
+
   const clearUpload = () => {
     setUploadedFileName(null);
+    setPreviewKind(null);
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
     form.setValue("assetUrl", "", { shouldValidate: false });
   };
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
 
   const onSubmit = (values: CreateAdFormValues) => {
     const formattedQuestions = values.questions.map(q => ({
@@ -170,14 +203,17 @@ export default function CreateAd() {
       { data: payload },
       {
         onSuccess: (data) => {
-          toast({ title: "Ad Created", description: "Your ad has been successfully created." });
+          toast({
+            title: "Campaign launched",
+            description: `Saved at ${new Date().toLocaleTimeString()}.`,
+          });
           setLocation(`/ads/${data.id}`);
         },
-        onError: () => {
+        onError: (error) => {
           toast({
-            title: "Error",
-            description: "Could not create ad. Please try again.",
-            variant: "destructive"
+            title: "Couldn't launch campaign",
+            description: publicError(error, "Could not create the campaign. Please try again."),
+            variant: "destructive",
           });
         }
       }
@@ -272,22 +308,56 @@ export default function CreateAd() {
                     {assetInputMode === "upload" ? (
                       <div className="space-y-3">
                         {uploadedFileName && !isUploading ? (
-                          <div className="flex items-center gap-3 p-3 rounded-md border bg-muted/40">
-                            <Upload className="h-4 w-4 text-primary shrink-0" />
-                            <span className="text-sm truncate flex-1">{uploadedFileName}</span>
-                            <button
-                              type="button"
-                              onClick={clearUpload}
-                              className="text-muted-foreground hover:text-foreground shrink-0"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
+                          <div className="space-y-3 rounded-md border bg-muted/40 p-3">
+                            <div className="flex items-center gap-3">
+                              <Upload className="h-4 w-4 text-primary shrink-0" />
+                              <span className="text-sm truncate flex-1">{uploadedFileName}</span>
+                              <button
+                                type="button"
+                                onClick={clearUpload}
+                                className="text-muted-foreground hover:text-foreground shrink-0"
+                                aria-label="Remove uploaded file"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                            {previewUrl && (
+                              <div className="overflow-hidden rounded border bg-black/5">
+                                {previewKind === "video" ? (
+                                  <video
+                                    src={previewUrl}
+                                    controls
+                                    playsInline
+                                    className="max-h-56 w-full object-contain"
+                                  />
+                                ) : (
+                                  <img
+                                    src={previewUrl}
+                                    alt={`Preview of ${uploadedFileName}`}
+                                    className="max-h-56 w-full object-contain"
+                                  />
+                                )}
+                              </div>
+                            )}
                           </div>
                         ) : (
-                          <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-md p-8 cursor-pointer transition-colors ${isUploading ? "opacity-60 pointer-events-none border-primary/40 bg-primary/5" : "hover:border-primary/50 hover:bg-muted/30"}`}>
+                          <label
+                            onDragOver={(e) => { e.preventDefault(); if (!isUploading) setIsDragging(true); }}
+                            onDragLeave={() => setIsDragging(false)}
+                            onDrop={handleDrop}
+                            className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed rounded-md p-8 cursor-pointer transition-colors ${
+                              isUploading
+                                ? "opacity-60 pointer-events-none border-primary/40 bg-primary/5"
+                                : isDragging
+                                  ? "border-primary bg-primary/10"
+                                  : "hover:border-primary/50 hover:bg-muted/30"
+                            }`}
+                          >
                             <Upload className="h-6 w-6 text-muted-foreground" />
                             <div className="text-center">
-                              <p className="text-sm font-medium">Click to upload or drag and drop</p>
+                              <p className="text-sm font-medium">
+                                {isDragging ? "Drop your file to upload" : "Click to upload or drag and drop"}
+                              </p>
                               <p className="text-xs text-muted-foreground mt-1">Images and videos up to 100 MB</p>
                             </div>
                             <input
@@ -304,9 +374,12 @@ export default function CreateAd() {
                           <div className="space-y-1.5">
                             <div className="flex justify-between text-xs text-muted-foreground">
                               <span>Uploading {uploadedFileName}…</span>
-                              <span>{progress}%</span>
+                              {progress !== null && <span>{progress}%</span>}
                             </div>
-                            <Progress value={progress} className="h-1.5" />
+                            <Progress
+                              value={progress ?? undefined}
+                              className={`h-1.5 ${progress === null ? "animate-pulse" : ""}`}
+                            />
                           </div>
                         )}
 

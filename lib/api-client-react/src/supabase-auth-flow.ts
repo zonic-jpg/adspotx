@@ -1,14 +1,15 @@
 import { hasSupabase, supabase } from "./supabase-client";
 import { fetchProfile, invokeEdge, profileToUser } from "./supabase-auth";
 import {
+  AWAITING_MSG,
   OWNER_EMAIL,
   OWNER_SOFT_USER_ID,
+  adminAccessStatus,
   clearSoftOwnerSession,
   identityToEmail,
-  isApproved,
   isOwnerEmail,
-  isRevoked,
   isSharedAdminPassword,
+  requestAdminAccess,
   saveSoftOwnerSession,
 } from "./admin-tester";
 import type { UserProfile } from "./generated/api.schemas";
@@ -105,10 +106,16 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   const sharedPw = isSharedAdminPassword(password);
 
   // Pending approval ONLY for shared admin passwords (non-owner). Normal reviewer/brand: no gate.
+  // The decision is read from the server, so a tester approved on the owner's
+  // device is approved everywhere.
   if (sharedPw && !owner) {
-    if (isRevoked(normEmail)) throw Object.assign(new Error("Admin access was revoked."), { status: 403 });
-    if (!isApproved(normEmail)) {
-      throw Object.assign(new Error("Awaiting approval — the owner must approve your admin access."), {
+    const status = await adminAccessStatus(normEmail);
+    if (status === "revoked") {
+      throw Object.assign(new Error("Admin access was revoked."), { status: 403 });
+    }
+    if (status !== "approved") {
+      await requestAdminAccess(email);
+      throw Object.assign(new Error(AWAITING_MSG), {
         status: 403,
         code: "pending_approval",
       });
@@ -186,8 +193,11 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
   // Pending gate: shared-admin password OR admin roles only — never block normal reviewer/brand.
   const adminRole = profile.role === "admin" || profile.role === "super_admin";
   if (!owner && profile.approval_status === "pending" && (sharedPw || adminRole)) {
+    // Register the request before signing out, so the owner's queue shows
+    // this person instead of leaving them stuck with no way to be seen.
+    await requestAdminAccess(profile.email);
     await sb.auth.signOut();
-    throw Object.assign(new Error("Awaiting approval"), { status: 403, code: "pending_approval" });
+    throw Object.assign(new Error(AWAITING_MSG), { status: 403, code: "pending_approval" });
   }
 
   profile = elevateOwnerProfile(profile);

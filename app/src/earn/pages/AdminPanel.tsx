@@ -1343,7 +1343,9 @@ function PackagesTab({ packages, isLoading, onRefresh }: { packages: AdPackage[]
                       {!pkg.active && <span className="text-[10px] px-1.5 py-0.5 bg-[#f3f4f6] text-[#9ca3af] font-bold uppercase tracking-wider">Inactive</span>}
                     </div>
                     <div className="flex gap-4 text-[12px] text-[#9ca3af]">
-                      <span className="font-black text-[#0f0f14]">${typeof pkg.price === "number" ? pkg.price.toFixed(2) : pkg.price}</span>
+                      <span className="font-black text-[#0f0f14]">
+                        ₦{Number(pkg.price ?? 0).toLocaleString()}
+                      </span>
                       <span>{pkg.adSlots} slot{pkg.adSlots !== 1 ? "s" : ""}</span>
                       <span>{pkg.durationDays}d</span>
                       <span>{(pkg.maxImpressions ?? (pkg as { impressions?: number }).impressions ?? 0).toLocaleString()} impressions</span>

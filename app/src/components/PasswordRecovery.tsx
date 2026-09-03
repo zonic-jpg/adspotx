@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { hasSupabase, supabase } from "@workspace/api-client-react";
+import { publicError } from "../lib/publicMessage";
 
 const wrap: React.CSSProperties = {
   position: "fixed",
@@ -47,6 +48,7 @@ export function PasswordRecovery({ brand = "AdSpot" }: { brand?: string }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sentAt, setSentAt] = useState<Date | null>(null);
 
   useEffect(() => {
     const open = () => {
@@ -69,6 +71,7 @@ export function PasswordRecovery({ brand = "AdSpot" }: { brand?: string }) {
     setMode(null);
     setMsg(null);
     setErr(null);
+    setSentAt(null);
     if (location.hash.includes("forgot")) location.hash = "";
   };
 
@@ -77,29 +80,36 @@ export function PasswordRecovery({ brand = "AdSpot" }: { brand?: string }) {
     setErr(null);
     if (!hasSupabase || !supabase) {
       setBusy(false);
-      setErr("Supabase is not configured on this deploy.");
+      setErr("Password reset is temporarily unavailable. Please try again shortly.");
       return;
     }
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}${location.pathname}#recovery`,
     });
     setBusy(false);
-    if (error) setErr(error.message);
-    else setMsg("If an account exists for that email, we've sent a reset link.");
+    if (error) {
+      setErr(publicError(error, "We couldn't send the reset link. Please try again."));
+      return;
+    }
+    setSentAt(new Date());
+    setMsg("If an account exists for that email, we've sent a reset link. Check your inbox and spam folder.");
   };
 
   const doReset = async () => {
     if (pw.length < 8) return setErr("Password must be at least 8 characters.");
     if (pw !== pw2) return setErr("Passwords don't match.");
-    if (!supabase) return setErr("Not connected");
+    if (!supabase) {
+      return setErr("Password reset is temporarily unavailable. Please try again shortly.");
+    }
     setBusy(true);
     const { error } = await supabase.auth.updateUser({ password: pw });
     setBusy(false);
-    if (error) setErr(error.message);
-    else {
-      setMsg("Password updated.");
-      setTimeout(close, 1500);
+    if (error) {
+      setErr(publicError(error, "We couldn't update your password. Please try again."));
+      return;
     }
+    setMsg("Password updated. You can sign in with it now.");
+    setTimeout(close, 1800);
   };
 
   return (
@@ -108,11 +118,18 @@ export function PasswordRecovery({ brand = "AdSpot" }: { brand?: string }) {
         <h3 style={{ margin: "0 0 6px" }}>{mode === "reset" ? "Set a new password" : `Reset ${brand} password`}</h3>
         {mode === "forgot" ? (
           msg ? (
-            <p style={{ fontSize: 13 }}>{msg}</p>
+            <>
+              <p style={{ fontSize: 13 }}>{msg}</p>
+              {sentAt && (
+                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>
+                  Sent {sentAt.toLocaleTimeString()}
+                </p>
+              )}
+            </>
           ) : (
             <>
               <p style={{ fontSize: 13, color: "#374151" }}>
-                Real email accounts only. Orbit admin passwords still work for testers.
+                Enter the email address on your account and we'll send you a link to set a new password.
               </p>
               <input style={inp} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
               {err && <p style={{ fontSize: 13, color: "#b00020", marginTop: 8 }}>{err}</p>}

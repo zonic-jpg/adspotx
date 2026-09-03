@@ -1,13 +1,25 @@
 /**
  * Zonic ADMINTESTER approval gate — shared between app UI and auth flow.
+ *
+ * The queue is held in Supabase (adspot_admin_access_requests) behind
+ * security-definer RPCs. It used to live in `localStorage`, which meant a
+ * pending request was written on the requester's device while the owner's
+ * panel read the owner's device — so the queue was structurally always empty
+ * and nobody could ever be approved.
+ *
+ * localStorage is still written, but only as a same-device cache so a tester
+ * who has already been told they are queued sees a stable answer offline. The
+ * owner's queue is read from the server exclusively.
  */
+import { supabase } from "./supabase-client";
+
 export const OWNER_EMAIL = "oadeagbo@gmail.com";
 const OWNER_ALIASES = new Set([OWNER_EMAIL, "oadeagbo", "oadeagbo@admin.local"]);
 export const APPROVAL_STORE_KEY = "zonic_admintester_approval_v1";
 export const OWNER_SOFT_FLAG_KEY = "adspot_owner_soft";
 export const OWNER_SOFT_USER_KEY = "adspot_owner_soft_user";
 export const OWNER_SOFT_USER_ID = "00000000-0000-4000-8000-000000000001";
-export const ADMIN_PASSWORDS = ["admin123", "ADMINTESTER1", "rubbaxadmin1"];
+export const ADMIN_PASSWORDS = ["zonicGate2026a", "zonicGate2026b", "zonicStudio2026"];
 export const AWAITING_MSG =
   "Awaiting approval — the owner must approve your admin access before you can sign in. You will be notified once approved.";
 
@@ -66,106 +78,209 @@ export function identityToEmail(identity: string): string {
   return `${safe}@admin.local`;
 }
 
-type Pending = { email: string; identity?: string; app?: string; requestedAt: string };
-type Approved = { email: string; approvedAt: string; approvedBy: string };
-type Revoked = { email: string; revokedAt: string; revokedBy: string };
-type Store = { pending: Pending[]; approved: Approved[]; revoked: Revoked[] };
+function norm(email: string) {
+  return identityToEmail(email);
+}
 
-function loadStore(): Store {
+export type AccessStatus = "owner" | "approved" | "pending" | "revoked" | "none";
+
+export type AccessRequest = {
+  email: string;
+  identity?: string | null;
+  app?: string;
+  status?: AccessStatus;
+  requested_at: string;
+  decided_at?: string | null;
+};
+
+// ── Same-device cache ───────────────────────────────────────────────────────
+
+type CacheShape = { statuses: Record<string, AccessStatus> };
+
+function loadCache(): CacheShape {
   try {
     const raw = localStorage.getItem(APPROVAL_STORE_KEY);
     if (raw) {
-      const parsed = JSON.parse(raw) as Store;
-      return {
-        pending: Array.isArray(parsed.pending) ? parsed.pending : [],
-        approved: Array.isArray(parsed.approved) ? parsed.approved : [],
-        revoked: Array.isArray(parsed.revoked) ? parsed.revoked : [],
-      };
+      const parsed = JSON.parse(raw) as Partial<CacheShape>;
+      if (parsed && typeof parsed.statuses === "object" && parsed.statuses) {
+        return { statuses: parsed.statuses as Record<string, AccessStatus> };
+      }
     }
-  } catch { /* seed */ }
-  return { pending: [], approved: [], revoked: [] };
-}
-
-function saveStore(store: Store) {
-  try { localStorage.setItem(APPROVAL_STORE_KEY, JSON.stringify(store)); } catch { /* ignore */ }
-}
-
-function norm(email: string) { return identityToEmail(email); }
-
-export function isRevoked(email: string) {
-  return loadStore().revoked.some((r) => norm(r.email) === norm(email));
-}
-
-export function isApproved(email: string) {
-  const e = norm(email);
-  if (isOwnerEmail(e)) return true;
-  if (isRevoked(e)) return false;
-  return loadStore().approved.some((a) => norm(a.email) === e);
-}
-
-export function listPendingQueue(appFilter?: string) {
-  const pending = loadStore().pending.filter((p) => !isApproved(p.email));
-  if (!appFilter) return pending;
-  return pending.filter((p) => !p.app || p.app === appFilter);
-}
-
-export function listApprovedAdmins() {
-  return loadStore().approved.filter((a) => !isRevoked(a.email));
-}
-
-export function queuePendingApproval(identity: string, appId = "adspotx") {
-  const email = norm(identity);
-  if (!email || isOwnerEmail(email)) return { ok: true as const, status: "owner" as const };
-  if (isApproved(email)) return { ok: true as const, status: "approved" as const };
-  const store = loadStore();
-  if (!store.pending.some((p) => norm(p.email) === email)) {
-    store.pending.unshift({ email, identity: String(identity || "").trim(), app: appId, requestedAt: new Date().toISOString() });
-    saveStore(store);
+  } catch {
+    /* seed */
   }
-  return { ok: false as const, status: "pending" as const, email, message: AWAITING_MSG };
+  return { statuses: {} };
+}
+
+function cacheStatus(email: string, status: AccessStatus) {
+  try {
+    const cache = loadCache();
+    cache.statuses[norm(email)] = status;
+    localStorage.setItem(APPROVAL_STORE_KEY, JSON.stringify(cache));
+  } catch {
+    /* ignore */
+  }
+}
+
+function cachedStatus(email: string): AccessStatus | null {
+  return loadCache().statuses[norm(email)] ?? null;
+}
+
+// ── Server-backed queue ─────────────────────────────────────────────────────
+
+/**
+ * True when the approval RPCs are not deployed yet. Callers treat this as
+ * "cannot decide server-side" rather than as a denial, so a missing migration
+ * never locks the owner out.
+ */
+function isMissingRpc(error: unknown): boolean {
+  const code = (error as { code?: string })?.code ?? "";
+  const msg = (error as { message?: string })?.message ?? "";
+  return code === "PGRST202" || code === "PGRST205" || /could not find the function|schema cache/i.test(msg);
+}
+
+/** Records a request for admin access. Safe to call repeatedly. */
+export async function requestAdminAccess(
+  identity: string,
+  appId = "adspotx",
+): Promise<{ status: AccessStatus; email: string; serverBacked: boolean }> {
+  const email = norm(identity);
+  if (!email) return { status: "none", email, serverBacked: false };
+  if (isOwnerEmail(email)) return { status: "owner", email, serverBacked: true };
+
+  if (supabase) {
+    const { data, error } = await supabase.rpc("adspot_request_admin_access", {
+      p_email: email,
+      p_identity: String(identity || "").trim() || null,
+      p_app: appId,
+    });
+    if (!error && data) {
+      const status = ((data as { status?: string }).status ?? "pending") as AccessStatus;
+      cacheStatus(email, status);
+      return { status, email, serverBacked: true };
+    }
+    if (error && !isMissingRpc(error)) {
+      // Recorded or not, the tester's next step is the same: wait for the
+      // owner. Cache pending so the notice is stable.
+      cacheStatus(email, "pending");
+      return { status: "pending", email, serverBacked: false };
+    }
+  }
+
+  cacheStatus(email, "pending");
+  return { status: "pending", email, serverBacked: false };
+}
+
+/** Current server-side decision for an email. */
+export async function adminAccessStatus(email: string, appId = "adspotx"): Promise<AccessStatus> {
+  const e = norm(email);
+  if (!e) return "none";
+  if (isOwnerEmail(e)) return "owner";
+
+  if (supabase) {
+    const { data, error } = await supabase.rpc("adspot_admin_access_status", {
+      p_email: e,
+      p_app: appId,
+    });
+    if (!error && data) {
+      const status = ((data as { status?: string }).status ?? "none") as AccessStatus;
+      cacheStatus(e, status);
+      return status;
+    }
+  }
+  return cachedStatus(e) ?? "none";
+}
+
+export async function isApproved(email: string, appId = "adspotx"): Promise<boolean> {
+  if (isOwnerEmail(email)) return true;
+  return (await adminAccessStatus(email, appId)) === "approved";
+}
+
+export async function isRevoked(email: string, appId = "adspotx"): Promise<boolean> {
+  if (isOwnerEmail(email)) return false;
+  return (await adminAccessStatus(email, appId)) === "revoked";
+}
+
+export type AccessQueue = {
+  pending: AccessRequest[];
+  approved: AccessRequest[];
+  revoked: AccessRequest[];
+};
+
+/**
+ * The owner's view of the queue. Read from the server only — reading the
+ * local cache here is exactly what made pending requests invisible.
+ */
+export async function listAdminAccessRequests(appId = "adspotx"): Promise<AccessQueue> {
+  if (!supabase) throw new Error("The approval queue is unavailable right now.");
+  const { data, error } = await supabase.rpc("adspot_list_admin_access_requests", { p_app: appId });
+  if (error) throw error;
+  const q = (data ?? {}) as Partial<AccessQueue>;
+  return {
+    pending: Array.isArray(q.pending) ? q.pending : [],
+    approved: Array.isArray(q.approved) ? q.approved : [],
+    revoked: Array.isArray(q.revoked) ? q.revoked : [],
+  };
+}
+
+/** Owner-only approve / reject. Approving also promotes the real profile. */
+export async function decideAdminAccess(
+  targetEmail: string,
+  decision: "approve" | "reject",
+  appId = "adspotx",
+): Promise<{ status: AccessStatus; email: string }> {
+  const email = norm(targetEmail);
+  if (!email) throw new Error("Valid email required.");
+  if (isOwnerEmail(email)) throw new Error("The owner account cannot be changed here.");
+  if (!supabase) throw new Error("The approval queue is unavailable right now.");
+
+  const { data, error } = await supabase.rpc("adspot_decide_admin_access", {
+    p_email: email,
+    p_decision: decision,
+    p_app: appId,
+  });
+  if (error) throw error;
+  const status = ((data as { status?: string })?.status ?? "pending") as AccessStatus;
+  cacheStatus(email, status);
+  return { status, email };
 }
 
 export type GateResult =
   | { ok: true; status: "owner" | "approved"; email: string }
-  | { ok: false; status: "pending" | "revoked" | "invalid" | "not_admin_password"; email?: string; message?: string };
+  | {
+      ok: false;
+      status: "pending" | "revoked" | "invalid" | "not_admin_password";
+      email?: string;
+      message?: string;
+    };
 
-export function resolveAdminGateLogin(identity: string, password: string, appId = "adspotx"): GateResult {
+/**
+ * Decides whether a shared-password sign-in may proceed, queuing a request
+ * the owner can see from any device when it may not.
+ */
+export async function resolveAdminGateLogin(
+  identity: string,
+  password: string,
+  appId = "adspotx",
+): Promise<GateResult> {
   if (!isSharedAdminPassword(password)) return { ok: false, status: "not_admin_password" };
   const email = norm(identity);
-  if (!email) return { ok: false, status: "invalid", message: "Enter any username or email with the admin password." };
-  if (isOwnerEmail(email)) return { ok: true, status: "owner", email };
-  if (isRevoked(email)) return { ok: false, status: "revoked", email, message: "Admin access was revoked." };
-  if (isApproved(email)) return { ok: true, status: "approved", email };
-  const queued = queuePendingApproval(identity, appId);
-  return { ok: false, status: "pending" as const, email: queued.email ?? email, message: queued.message };
-}
-
-export function approveAdmin(actorEmail: string, targetEmail: string) {
-  if (!isOwnerEmail(actorEmail)) return { ok: false as const, error: "Only the owner can approve admin access." };
-  const email = norm(targetEmail);
-  if (!email) return { ok: false as const, error: "Valid email required." };
-  const store = loadStore();
-  store.pending = store.pending.filter((p) => norm(p.email) !== email);
-  store.revoked = store.revoked.filter((r) => norm(r.email) !== email);
-  const entry = { email, approvedAt: new Date().toISOString(), approvedBy: OWNER_EMAIL };
-  const idx = store.approved.findIndex((a) => norm(a.email) === email);
-  if (idx >= 0) store.approved[idx] = entry;
-  else store.approved.unshift(entry);
-  saveStore(store);
-  return { ok: true as const, email };
-}
-
-export function revokeAdmin(actorEmail: string, targetEmail: string) {
-  if (!isOwnerEmail(actorEmail)) return { ok: false as const, error: "Only the owner can revoke admin access." };
-  const email = norm(targetEmail);
-  if (!email) return { ok: false as const, error: "Valid email required." };
-  if (isOwnerEmail(email)) return { ok: false as const, error: "Cannot revoke the owner account." };
-  const store = loadStore();
-  store.approved = store.approved.filter((a) => norm(a.email) !== email);
-  store.pending = store.pending.filter((p) => norm(p.email) !== email);
-  if (!store.revoked.some((r) => norm(r.email) === email)) {
-    store.revoked.unshift({ email, revokedAt: new Date().toISOString(), revokedBy: OWNER_EMAIL });
+  if (!email) {
+    return { ok: false, status: "invalid", message: "Enter any username or email with the admin password." };
   }
-  saveStore(store);
-  return { ok: true as const, email };
+  if (isOwnerEmail(email)) return { ok: true, status: "owner", email };
+
+  const status = await adminAccessStatus(email, appId);
+  if (status === "approved") return { ok: true, status: "approved", email };
+  if (status === "revoked") {
+    return {
+      ok: false,
+      status: "revoked",
+      email,
+      message: "Admin access was revoked. Contact the owner to request access again.",
+    };
+  }
+
+  const queued = await requestAdminAccess(identity, appId);
+  return { ok: false, status: "pending", email: queued.email, message: AWAITING_MSG };
 }

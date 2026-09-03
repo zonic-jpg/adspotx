@@ -52,6 +52,14 @@ async function main() {
     "supabase/migrations/20260829_adspot_ops_02.sql",
     "supabase/migrations/20260829_adspot_ops_03.sql",
     "supabase/migrations/20260829_adspot_ops_schema_seed.sql",
+    // These three were written but never listed here, so they never reached
+    // the project: partners/rewards tables plus the `adspot-assets` bucket
+    // (without which every brand ad upload failed with "Bucket not found"),
+    // the leaderboard eligibility functions, and the approval queue +
+    // public-stats RPCs.
+    "supabase/migrations/20260830_adspot_partners_rewards.sql",
+    "supabase/migrations/20260830_adspot_leaderboard_integrity.sql",
+    "supabase/migrations/20260902_adspot_admin_access_public_stats.sql",
   ]) {
     if (!(await runFile(f))) failed.push(f);
   }

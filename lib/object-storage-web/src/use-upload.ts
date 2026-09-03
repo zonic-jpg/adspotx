@@ -17,7 +17,13 @@ export function useUpload(options: UseUploadOptions = {}) {
   const basePath = options.basePath ?? "/api/storage";
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-  const [progress, setProgress] = useState(0);
+  /**
+   * Byte progress when the transport reports it, `null` when it cannot.
+   * The Supabase storage client buffers the whole body, so there is no
+   * percentage to show — reporting a made-up one told the user the upload was
+   * 30% done the instant they dropped the file.
+   */
+  const [progress, setProgress] = useState<number | null>(0);
 
   const uploadFile = useCallback(
     async (file: File): Promise<UploadResult | null> => {
@@ -32,8 +38,7 @@ export function useUpload(options: UseUploadOptions = {}) {
           if (mod.hasSupabase) {
             const formData = new FormData();
             formData.append("file", file);
-            options.onProgress?.(30);
-            setProgress(30);
+            setProgress(null);
             const result = await mod.customFetch<UploadResult>(`${basePath}/uploads`, {
               method: "POST",
               body: formData,

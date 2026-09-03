@@ -1,4 +1,5 @@
 import { customFetch } from "@workspace/api-client-react";
+import { publicError } from "../../lib/publicMessage";
 
 /** Authenticated fetch — routes through Supabase backend when configured. */
 export async function adminApiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
@@ -12,19 +13,10 @@ export async function adminApiFetch<T = unknown>(path: string, opts?: RequestIni
   });
 }
 
+/**
+ * Message for a failed admin read. Signed-in admins keep the underlying
+ * detail (they can act on it); anyone else gets copy they can act on.
+ */
 export function adminApiErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    // Soft/owner empty fallbacks should not surface raw unauthorized banners.
-    if (/unauthorized/i.test(error.message) && typeof localStorage !== "undefined") {
-      try {
-        if (localStorage.getItem("adspot_owner_soft") === "1") {
-          return "Admin data unavailable in soft session — confirm owner Auth email for live stats.";
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    return error.message;
-  }
-  return "Could not load data. Check your connection or try again.";
+  return publicError(error, "Could not load data. Check your connection or try again.");
 }

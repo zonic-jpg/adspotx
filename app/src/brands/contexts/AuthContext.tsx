@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { useQueryClient } from "@tanstack/react-query";
 import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { ApiError } from "@workspace/api-client-react";
+import { setDiagnosticsAudience } from "../../lib/publicMessage";
 import type { UserProfile } from "@workspace/api-client-react";
 import {
   supabaseSignOut,
@@ -126,6 +127,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isLoading =
     !ready ||
     (hasSupabase && !softOwner && !holdSessionUser && !softBoot && isUserLoading);
+
+  // Admins can act on infrastructure detail, so they keep the original error
+  // text that the public message guard hides from everyone else.
+  useEffect(() => {
+    const role = resolvedUser?.role;
+    setDiagnosticsAudience(role === "admin" || role === "super_admin");
+  }, [resolvedUser?.role]);
 
   return (
     <AuthContext.Provider value={{ user: resolvedUser ?? null, isLoading, login, logout }}>

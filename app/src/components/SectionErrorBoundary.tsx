@@ -33,9 +33,9 @@ export class SectionErrorBoundary extends Component<Props, State> {
           <p style={{ fontSize: 14, opacity: 0.7, margin: "8px 0 16px" }}>
             The rest of AdSpot is unaffected. Reload to try again.
           </p>
-          {this.state.message ? (
+          {safeMessage ? (
             <p style={{ fontSize: 12, opacity: 0.5, marginBottom: 12 }} data-testid="section-error-msg">
-              {this.state.message}
+              {safeMessage}
             </p>
           ) : null}
           <button

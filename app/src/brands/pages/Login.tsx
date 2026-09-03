@@ -10,11 +10,17 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@brands/components/ui/input";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
-import { isSharedAdminPassword, resolveAdminGateLogin, isOwnerEmail } from "../../lib/adminTesterApproval";
+import {
+  AWAITING_MSG,
+  isSharedAdminPassword,
+  resolveAdminGateLogin,
+  isOwnerEmail,
+} from "../../lib/adminTesterApproval";
 import { PasswordRecovery } from "../../components/PasswordRecovery";
+import { publicError } from "../../lib/publicMessage";
 
-const MISSING_SUPABASE_MSG =
-  "Sign-in is unavailable — Supabase is not configured on this deploy. Rebuild with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.";
+const SIGNIN_UNAVAILABLE_MSG =
+  "Sign-in is temporarily unavailable. Please try again shortly.";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -60,18 +66,20 @@ export default function Login() {
   const onSubmit = async (values: LoginFormValues) => {
     setFormError(null);
     if (!hasSupabase) {
-      setFormError(MISSING_SUPABASE_MSG);
+      setFormError(SIGNIN_UNAVAILABLE_MSG);
       return;
-    }
-    if (isSharedAdminPassword(values.password)) {
-      const gate = resolveAdminGateLogin(values.email, values.password, "adspotx");
-      if (!gate.ok) {
-        setFormError(gate.message || "Awaiting approval");
-        return;
-      }
     }
     setPending(true);
     try {
+      // The gate now asks the server, so keep the button in its pending state
+      // while it answers.
+      if (isSharedAdminPassword(values.password)) {
+        const gate = await resolveAdminGateLogin(values.email, values.password, "adspotx");
+        if (!gate.ok) {
+          setFormError(gate.message || AWAITING_MSG);
+          return;
+        }
+      }
       const data = await supabaseLogin(values.email, values.password);
       if (data.user.role === "reviewer" && !isOwnerEmail(data.user.email ?? "")) {
         setFormError("Reviewer accounts sign in at the Earn portal (/earn/login).");
@@ -82,14 +90,14 @@ export default function Login() {
     } catch (error: unknown) {
       const err = error as Error & { code?: string; status?: number };
       if (err.code === "supabase_not_configured" || err.status === 503) {
-        setFormError(err.message || MISSING_SUPABASE_MSG);
+        setFormError(SIGNIN_UNAVAILABLE_MSG);
         return;
       }
-      if (err.code === "pending_approval" || err.status === 403) {
-        setFormError(err.message || "Awaiting approval");
+      if (err.code === "pending_approval") {
+        setFormError(err.message || AWAITING_MSG);
         return;
       }
-      setFormError(err.message || "Wrong email or password. Try again.");
+      setFormError(publicError(err, "Wrong email or password. Try again."));
     } finally {
       setPending(false);
     }

@@ -12,11 +12,29 @@ export {
   type ActAsMode,
 } from "./act-as";
 export {
+  ADMIN_PASSWORDS,
+  APPROVAL_STORE_KEY,
+  AWAITING_MSG,
   OWNER_EMAIL,
+  adminAccessStatus,
+  clearSoftOwnerSession,
+  decideAdminAccess,
+  identityToEmail,
+  isApproved,
   isOwnerEmail,
   isOwnerSoftSession,
+  isRevoked,
+  isSharedAdminPassword,
+  listAdminAccessRequests,
   loadSoftOwnerUser,
-  clearSoftOwnerSession,
+  requestAdminAccess,
+  resolveAdminGateLogin,
   saveSoftOwnerSession,
+} from "./admin-tester";
+export type {
+  AccessQueue,
+  AccessRequest,
+  AccessStatus,
+  GateResult,
 } from "./admin-tester";
 export * from "./adspot-tables";

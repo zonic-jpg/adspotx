@@ -12,6 +12,7 @@ import { ApiError } from "@workspace/api-client-react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
 import { PasswordRecovery } from "../../components/PasswordRecovery";
+import { publicError } from "../../lib/publicMessage";
 
 const formSchema = z.object({
   email:    z.string().email("Enter a valid email"),
@@ -43,13 +44,11 @@ export default function Login() {
         setTimeout(() => { window.location.href = "/brands/login"; }, 2000);
         return;
       }
-      setFormError(
+      const raw =
         error instanceof ApiError
           ? (error.data as { message?: string } | null)?.message ?? error.message
-          : error instanceof Error
-            ? error.message
-            : "Wrong email or password. Try again.",
-      );
+          : error;
+      setFormError(publicError(raw, "Wrong email or password. Try again."));
     } finally {
       setIsLoading(false);
     }

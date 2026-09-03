@@ -1,177 +1,34 @@
 /**
  * Zonic orbit standard — ADMINTESTER approval gate (AdSpot).
- * Owner: oadeagbo@gmail.com → profiles.role owner/super_admin, always approved.
- * Other admin-password logins → pending until owner approves via profiles.approval_status.
+ *
+ * Owner: oadeagbo@gmail.com → always approved. Other shared-password logins
+ * queue in Supabase until the owner approves them.
+ *
+ * This file used to hold a second, diverging copy of the gate that stored the
+ * queue in localStorage. Both copies now resolve to the single server-backed
+ * implementation in @workspace/api-client-react, so the owner and the tester
+ * can no longer disagree about who is pending.
  */
-export const OWNER_EMAIL = "oadeagbo@gmail.com";
-const OWNER_ALIASES = new Set([OWNER_EMAIL, "oadeagbo", "oadeagbo@admin.local"]);
-export const APPROVAL_STORE_KEY = "zonic_admintester_approval_v1";
-export const ADMIN_PASSWORDS = ["admin123", "ADMINTESTER1", "rubbaxadmin1"];
-export const AWAITING_MSG =
-  "Awaiting approval — the owner must approve your admin access before you can sign in. You will be notified once approved.";
+export {
+  ADMIN_PASSWORDS,
+  APPROVAL_STORE_KEY,
+  AWAITING_MSG,
+  OWNER_EMAIL,
+  adminAccessStatus,
+  decideAdminAccess,
+  identityToEmail,
+  isApproved,
+  isOwnerEmail,
+  isRevoked,
+  isSharedAdminPassword,
+  listAdminAccessRequests,
+  requestAdminAccess,
+  resolveAdminGateLogin,
+} from "@workspace/api-client-react";
 
-export function isSharedAdminPassword(password: unknown): boolean {
-  const candidate = String(password ?? "").trim().toLowerCase();
-  return ADMIN_PASSWORDS.some((p) => p.toLowerCase() === candidate);
-}
-
-export function isOwnerEmail(email: string): boolean {
-  return OWNER_ALIASES.has(String(email ?? "").trim().toLowerCase());
-}
-
-export function identityToEmail(identity: string): string {
-  const raw = String(identity || "").trim();
-  if (!raw) return "";
-  if (raw.includes("@")) return raw.toLowerCase();
-  const safe = raw.replace(/[^a-zA-Z0-9._+-]/g, "").toLowerCase() || "user";
-  return `${safe}@admin.local`;
-}
-
-type Pending = { email: string; identity?: string; app?: string; requestedAt: string };
-type Approved = { email: string; approvedAt: string; approvedBy: string };
-type Revoked = { email: string; revokedAt: string; revokedBy: string };
-type Store = { pending: Pending[]; approved: Approved[]; revoked: Revoked[] };
-
-function loadStore(): Store {
-  try {
-    const raw = localStorage.getItem(APPROVAL_STORE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Store;
-      return {
-        pending: Array.isArray(parsed.pending) ? parsed.pending : [],
-        approved: Array.isArray(parsed.approved) ? parsed.approved : [],
-        revoked: Array.isArray(parsed.revoked) ? parsed.revoked : [],
-      };
-    }
-  } catch {
-    /* seed */
-  }
-  return { pending: [], approved: [], revoked: [] };
-}
-
-function saveStore(store: Store) {
-  try {
-    localStorage.setItem(APPROVAL_STORE_KEY, JSON.stringify(store));
-  } catch {
-    /* ignore */
-  }
-}
-
-function norm(email: string) {
-  return identityToEmail(email);
-}
-
-export function isRevoked(email: string) {
-  return loadStore().revoked.some((r) => norm(r.email) === norm(email));
-}
-
-export function isApproved(email: string) {
-  const e = norm(email);
-  if (isOwnerEmail(e)) return true;
-  if (isRevoked(e)) return false;
-  return loadStore().approved.some((a) => norm(a.email) === e);
-}
-
-export function listPendingQueue(appFilter?: string) {
-  const pending = loadStore().pending.filter((p) => !isApproved(p.email));
-  if (!appFilter) return pending;
-  return pending.filter((p) => !p.app || p.app === appFilter);
-}
-
-export function listApprovedAdmins() {
-  return loadStore().approved.filter((a) => !isRevoked(a.email));
-}
-
-export async function notifyOwnerPending(requesterEmail: string, appId: string) {
-  try {
-    const url = import.meta.env.VITE_ZONIC_NOTIFY_URL;
-    if (url) {
-      await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: OWNER_EMAIL,
-          subject: `[Zonic] Admin approval requested — ${appId}`,
-          requester: requesterEmail,
-          app: appId,
-          at: new Date().toISOString(),
-        }),
-      });
-    }
-  } catch {
-    /* fail-open */
-  }
-}
-
-export function queuePendingApproval(identity: string, appId = "adspotx") {
-  const email = norm(identity);
-  if (!email || isOwnerEmail(email)) return { ok: true as const, status: "owner" as const };
-  if (isApproved(email)) return { ok: true as const, status: "approved" as const };
-
-  const store = loadStore();
-  if (!store.pending.some((p) => norm(p.email) === email)) {
-    store.pending.unshift({
-      email,
-      identity: String(identity || "").trim(),
-      app: appId,
-      requestedAt: new Date().toISOString(),
-    });
-    saveStore(store);
-    void notifyOwnerPending(email, appId);
-  }
-  return { ok: false as const, status: "pending" as const, email, message: AWAITING_MSG };
-}
-
-export type GateResult =
-  | { ok: true; status: "owner" | "approved"; email: string }
-  | { ok: false; status: "pending" | "revoked" | "invalid" | "not_admin_password"; email?: string; message?: string };
-
-export function resolveAdminGateLogin(identity: string, password: string, appId = "adspotx"): GateResult {
-  if (!isSharedAdminPassword(password)) return { ok: false, status: "not_admin_password" };
-  const email = norm(identity);
-  if (!email) {
-    return { ok: false, status: "invalid", message: "Enter any username or email with the admin password." };
-  }
-  if (isOwnerEmail(email)) return { ok: true, status: "owner", email };
-  if (isRevoked(email)) {
-    return {
-      ok: false,
-      status: "revoked",
-      email,
-      message: "Admin access was revoked. Contact the owner to request access again.",
-    };
-  }
-  if (isApproved(email)) return { ok: true, status: "approved", email };
-  const queued = queuePendingApproval(identity, appId);
-  return { ok: false, status: queued.status as "pending", email: queued.email, message: queued.message };
-}
-
-export function approveAdmin(actorEmail: string, targetEmail: string) {
-  if (!isOwnerEmail(actorEmail)) return { ok: false as const, error: "Only the owner can approve admin access." };
-  const email = norm(targetEmail);
-  if (!email) return { ok: false as const, error: "Valid email required." };
-  const store = loadStore();
-  store.pending = store.pending.filter((p) => norm(p.email) !== email);
-  store.revoked = store.revoked.filter((r) => norm(r.email) !== email);
-  const entry = { email, approvedAt: new Date().toISOString(), approvedBy: OWNER_EMAIL };
-  const idx = store.approved.findIndex((a) => norm(a.email) === email);
-  if (idx >= 0) store.approved[idx] = entry;
-  else store.approved.unshift(entry);
-  saveStore(store);
-  return { ok: true as const, email };
-}
-
-export function revokeAdmin(actorEmail: string, targetEmail: string) {
-  if (!isOwnerEmail(actorEmail)) return { ok: false as const, error: "Only the owner can revoke admin access." };
-  const email = norm(targetEmail);
-  if (!email) return { ok: false as const, error: "Valid email required." };
-  if (isOwnerEmail(email)) return { ok: false as const, error: "Cannot revoke the owner account." };
-  const store = loadStore();
-  store.approved = store.approved.filter((a) => norm(a.email) !== email);
-  store.pending = store.pending.filter((p) => norm(p.email) !== email);
-  if (!store.revoked.some((r) => norm(r.email) === email)) {
-    store.revoked.unshift({ email, revokedAt: new Date().toISOString(), revokedBy: OWNER_EMAIL });
-  }
-  saveStore(store);
-  return { ok: true as const, email };
-}
+export type {
+  AccessQueue,
+  AccessRequest,
+  AccessStatus,
+  GateResult,
+} from "@workspace/api-client-react";

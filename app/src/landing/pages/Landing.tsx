@@ -4,6 +4,7 @@ import { Footer } from "@landing/components/Footer";
 import { HeroVideo } from "@landing/components/HeroVideo";
 import { Button } from "@landing/components/ui/button";
 import { Card, CardContent } from "@landing/components/ui/card";
+import { Skeleton } from "@landing/components/ui/skeleton";
 import { Dialog, DialogContent, DialogTitle } from "@landing/components/ui/dialog";
 import {
   PlayCircle,
@@ -67,13 +68,20 @@ const BRAND_BENEFITS = [
 ] as const;
 
 export default function Landing() {
-  const { data: stats } = useGetPublicStats({ query: { queryKey: getGetPublicStatsQueryKey() } });
+  const { data: stats, isLoading: statsLoading } = useGetPublicStats({
+    query: { queryKey: getGetPublicStatsQueryKey() },
+  });
   const { data: videos } = useGetPublicVideos(
     { limit: 6 },
     { query: { queryKey: getGetPublicVideosQueryKey({ limit: 6 }) } },
   );
   const [lightboxLoaded, setLightboxLoaded] = useState(false);
-  const { data: packages } = useGetPublicPackages({ query: { queryKey: getGetPublicPackagesQueryKey() } });
+  const {
+    data: packages,
+    isLoading: packagesLoading,
+    isError: packagesError,
+  } = useGetPublicPackages({ query: { queryKey: getGetPublicPackagesQueryKey() } });
+  const packageList = packages?.packages ?? [];
   const [selectedVideo, setSelectedVideo] = useState<PublicVideo | null>(null);
 
   const getEmbedUrl = (video: PublicVideo) =>
@@ -218,9 +226,13 @@ export default function Landing() {
                   <div className="mb-2 flex justify-center">
                     <Icon size={22} className="text-primary" />
                   </div>
-                  <p className="text-2xl sm:text-3xl font-bold text-foreground">
-                    {value?.toLocaleString() ?? "—"}
-                  </p>
+                  {statsLoading ? (
+                    <Skeleton className="mx-auto h-8 w-20 sm:h-9" />
+                  ) : (
+                    <p className="text-2xl sm:text-3xl font-bold text-foreground">
+                      {(value ?? 0).toLocaleString()}
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground mt-1">{label}</p>
                 </div>
               ))}
@@ -361,17 +373,45 @@ export default function Landing() {
             </div>
 
             <div className="grid gap-6 md:grid-cols-3 max-w-4xl mx-auto">
-              {packages?.packages?.map((pkg) => {
+              {packagesLoading &&
+                [0, 1, 2].map((i) => (
+                  <Card key={`pkg-skeleton-${i}`} aria-hidden="true">
+                    <CardContent className="p-6">
+                      <Skeleton className="h-6 w-32" />
+                      <Skeleton className="mt-2 h-4 w-full" />
+                      <Skeleton className="mt-4 h-9 w-28" />
+                      <div className="mt-4 space-y-2">
+                        <Skeleton className="h-4 w-36" />
+                        <Skeleton className="h-4 w-40" />
+                      </div>
+                      <Skeleton className="mt-6 h-10 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+
+              {!packagesLoading && packageList.length === 0 && (
+                <p className="col-span-3 rounded-lg border border-dashed border-border py-8 text-center text-sm text-muted-foreground">
+                  {packagesError
+                    ? "Pricing isn't available right now. Register as a brand and we'll walk you through the options."
+                    : "Pricing packages are being finalised — register as a brand to be first to hear."}
+                </p>
+              )}
+
+              {packageList.map((pkg) => {
                 const raw = pkg as typeof pkg & { impressions?: number; ad_slots?: number };
                 const slots = raw.adSlots ?? raw.ad_slots ?? 0;
                 const maxImpressions = raw.maxImpressions ?? raw.impressions ?? 0;
+                // price is whole naira, not kobo — dividing by 100 turned
+                // ₦45,000 into ₦450.
                 const priceNaira = Number(pkg.price);
                 return (
                   <Card key={pkg.id} className={pkg.featured ? "border-primary border-2" : ""}>
                     <CardContent className="p-6">
                       <h3 className="text-lg font-semibold">{pkg.name}</h3>
                       <p className="text-sm text-muted-foreground mt-1 mb-4">{pkg.description}</p>
-                      <p className="text-3xl font-bold">₦{(Number.isFinite(priceNaira) ? priceNaira / 100 : 0).toLocaleString()}</p>
+                      <p className="text-3xl font-bold">
+                        ₦{(Number.isFinite(priceNaira) ? priceNaira : 0).toLocaleString()}
+                      </p>
                       <ul className="mt-4 space-y-2 text-sm text-muted-foreground">
                         <li className="flex items-center gap-2">
                           <Target size={14} className="text-primary shrink-0" />
@@ -390,9 +430,7 @@ export default function Landing() {
                     </CardContent>
                   </Card>
                 );
-              }) ?? (
-                <p className="col-span-3 text-center text-muted-foreground">Loading packages…</p>
-              )}
+              })}
             </div>
           </div>
         </section>

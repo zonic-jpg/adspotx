@@ -176,9 +176,37 @@ async function publicVideos(params: URLSearchParams) {
   return { status: 200, body: { videos, total: videos.length } };
 }
 
+/**
+ * Landing stats for a signed-out visitor.
+ *
+ * Counting the tables directly always returned zero: the policies on
+ * adspot_profiles / adspot_brands / adspot_review_sessions /
+ * adspot_points_ledger require auth.uid() or adspot_is_admin(), so anon sees
+ * no rows however much real data exists. adspot_public_stats() is a
+ * security-definer aggregate, so it answers without exposing any row.
+ */
 async function publicStats() {
-  const [users, brands, sessions, ledger, activeAds] = await Promise.all([
-    supabase!.from(ADSPOT_PROFILES).select("id", { count: "exact", head: true }),
+  const { data, error } = await supabase!.rpc("adspot_public_stats");
+  if (!error && data && typeof data === "object") {
+    const s = data as Record<string, number>;
+    const activeAds = Number(s.activeAds ?? 0);
+    return {
+      status: 200,
+      body: {
+        totalReviewers: Number(s.totalReviewers ?? 0),
+        totalBrands: Number(s.totalBrands ?? 0),
+        totalAdsCompleted: Number(s.totalAdsCompleted ?? 0),
+        totalPointsAwarded: Number(s.totalPointsAwarded ?? 0),
+        activeAds,
+        avgPointsPerAd: Number(s.avgPointsPerAd ?? 0),
+      },
+    };
+  }
+
+  // RPC not deployed yet — count what this caller is allowed to see rather
+  // than failing the whole landing page.
+  const [reviewers, brands, sessions, ledger, activeAds] = await Promise.all([
+    supabase!.from(ADSPOT_PROFILES).select("id", { count: "exact", head: true }).eq("role", "reviewer"),
     supabase!.from(ADSPOT_BRANDS).select("id", { count: "exact", head: true }),
     supabase!.from(ADSPOT_REVIEW_SESSIONS).select("id", { count: "exact", head: true }).eq("status", "completed"),
     supabase!.from(ADSPOT_POINTS_LEDGER).select("amount"),
@@ -188,11 +216,12 @@ async function publicStats() {
   return {
     status: 200,
     body: {
-      totalReviewers: users.count ?? 0,
+      totalReviewers: reviewers.count ?? 0,
       totalBrands: brands.count ?? 0,
-      totalCompletions: sessions.count ?? 0,
+      totalAdsCompleted: sessions.count ?? 0,
       totalPointsAwarded: totalPoints,
       activeAds: activeAds.count ?? 0,
+      avgPointsPerAd: 0,
     },
   };
 }
@@ -200,9 +229,14 @@ async function publicStats() {
 function mapAdPackage(row: Record<string, unknown>) {
   return {
     ...row,
+    // adspot_packages stores whole naira in `price_ngn`; the API contract
+    // (AdPackage.price) is also whole naira. Leaving this unmapped is what
+    // made every package render as ₦0.
+    price: Number(row.price ?? row.price_ngn ?? 0),
     adSlots: Number(row.adSlots ?? row.ad_slots ?? 1),
     durationDays: Number(row.durationDays ?? row.duration_days ?? 30),
     maxImpressions: Number(row.maxImpressions ?? row.max_impressions ?? row.impressions ?? 0),
+    weight: Number(row.weight ?? 1),
     featured: Boolean(row.featured),
     active: row.active !== false,
     createdAt: row.createdAt ?? row.created_at,
@@ -637,11 +671,17 @@ async function adminAds(params: URLSearchParams) {
 async function adminUsers(params: URLSearchParams) {
   await requireRole("admin", "super_admin");
   const role = params.get("role");
-  let q = supabase!.from(ADSPOT_PROFILES).select("*");
+  const limit = Number(params.get("limit") ?? 50);
+  const offset = Number(params.get("offset") ?? 0);
+  // `total` must be the matching row count, not the page length, or the
+  // directory's Next button disables itself on the first page.
+  let q = supabase!.from(ADSPOT_PROFILES).select("*", { count: "exact" });
   if (role) q = q.eq("role", role);
-  const { data, error } = await q.limit(100);
+  const { data, error, count } = await q
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
   if (error) throw error;
-  return { status: 200, body: { users: data ?? [], total: data?.length ?? 0 } };
+  return { status: 200, body: { users: data ?? [], total: count ?? data?.length ?? 0 } };
 }
 
 async function adminPackages() {
