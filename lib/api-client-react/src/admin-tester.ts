@@ -19,7 +19,7 @@ export const APPROVAL_STORE_KEY = "zonic_admintester_approval_v1";
 export const OWNER_SOFT_FLAG_KEY = "adspot_owner_soft";
 export const OWNER_SOFT_USER_KEY = "adspot_owner_soft_user";
 export const OWNER_SOFT_USER_ID = "00000000-0000-4000-8000-000000000001";
-export const ADMIN_PASSWORDS = ["zonicGate2026a", "zonicGate2026b", "zonicStudio2026"];
+export const ADMIN_PASSWORDS = ["zonicGate2026"];
 export const AWAITING_MSG =
   "Awaiting approval — the owner must approve your admin access before you can sign in. You will be notified once approved.";
 

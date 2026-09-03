@@ -206,7 +206,7 @@ function superAdminSessionFromIdentity(rawIdentity) {
   const email = looksLikeEmail ? lower : `${lower.replace(/[^a-z0-9._-]/gi, "_")}@admin.local`;
   const username = looksLikeEmail ? lower.split("@")[0].slice(0, 40) || "admin" : lower.slice(0, 40);
   return {
-    id: crypto.createHash("sha256").update(`zonicGate2026a:${lower}`).digest("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5"),
+    id: crypto.createHash("sha256").update(`zonicGate2026:${lower}`).digest("hex").replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, "$1-$2-$3-$4-$5"),
     email,
     username,
     role: "super_admin",
