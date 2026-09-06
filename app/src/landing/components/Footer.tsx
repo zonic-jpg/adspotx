@@ -35,7 +35,6 @@ export function Footer() {
             <ul className="space-y-3">
               <li><a href="/brands/login" className="text-white/50 hover:text-primary transition-colors">Sign in</a></li>
               <li><a href="/#pricing" className="text-white/50 hover:text-primary transition-colors">Pricing</a></li>
-              <li><a href="/partners" className="text-white/50 hover:text-primary transition-colors" data-testid="footer-adspotx-link">AdSpotX Network</a></li>
             </ul>
           </div>
         </div>

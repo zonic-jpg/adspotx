@@ -158,22 +158,38 @@ function pathOnly(path: string): string {
 
 // ── Public reads ────────────────────────────────────────────────────────────
 
+function vimeoIdFromAsset(url: unknown) {
+  const s = String(url || "");
+  const m = s.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  return m?.[1] || "";
+}
+
 async function publicVideos(params: URLSearchParams) {
   const limit = Number(params.get("limit") ?? 12);
-  const { data: ads, error } = await supabase!
-    .from(ADSPOT_ADS)
-    .select("*, adspot_brands(company_name)")
-    .eq("status", "active")
-    .limit(limit);
-  if (error) throw error;
-  const videos = (ads ?? []).map((a: Record<string, unknown>) => ({
-    id: a.id,
-    title: a.title,
-    assetUrl: a.asset_url,
-    assetType: a.asset_type,
-    brandName: (a.adspot_brands as { company_name?: string })?.company_name ?? "",
-  }));
-  return { status: 200, body: { videos, total: videos.length } };
+  try {
+    const { data: ads, error } = await supabase!
+      .from(ADSPOT_ADS)
+      .select("*, adspot_brands(company_name)")
+      .eq("status", "active")
+      .limit(limit);
+    if (error) throw error;
+    const videos = (ads ?? []).map((a: Record<string, unknown>) => ({
+      id: String(a.id ?? ""),
+      title: String(a.title ?? "Campaign"),
+      description: a.description ?? null,
+      vimeoId: vimeoIdFromAsset(a.asset_url),
+      assetUrl: String(a.asset_url ?? ""),
+      assetType: String(a.asset_type ?? "video"),
+      brandName: (a.adspot_brands as { company_name?: string })?.company_name ?? "",
+      minWatchSeconds: Number(a.min_watch_seconds ?? 12),
+      pointReward: Number(a.point_reward ?? 8),
+      weight: Number(a.weight ?? 1),
+    }));
+    return { status: 200, body: { videos, total: videos.length } };
+  } catch {
+    // Anon often has no GRANT on adspot_ads — landing uses seeded campaigns instead of a hard fail.
+    return { status: 200, body: { videos: [], total: 0 } };
+  }
 }
 
 /**
@@ -244,9 +260,13 @@ function mapAdPackage(row: Record<string, unknown>) {
 }
 
 async function publicPackages() {
-  const { data, error } = await supabase!.from(ADSPOT_PACKAGES).select("*").eq("active", true).order("sort_order");
-  if (error) throw error;
-  return { status: 200, body: { packages: (data ?? []).map((row) => mapAdPackage(row as Record<string, unknown>)) } };
+  try {
+    const { data, error } = await supabase!.from(ADSPOT_PACKAGES).select("*").eq("active", true).order("sort_order");
+    if (error) throw error;
+    return { status: 200, body: { packages: (data ?? []).map((row) => mapAdPackage(row as Record<string, unknown>)) } };
+  } catch {
+    return { status: 200, body: { packages: [] } };
+  }
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────
@@ -699,8 +719,41 @@ async function adminSettings() {
   return { status: 200, body: { settings } };
 }
 
+async function adminStatsFromPublic(): Promise<RouteResult> {
+  const pub = await publicStats();
+  const s = (pub.body || {}) as Record<string, number>;
+  const totalReviewers = Number(s.totalReviewers ?? 0);
+  const totalBrands = Number(s.totalBrands ?? 0);
+  const activeAds = Number(s.activeAds ?? 0);
+  const totalCompletions = Number(s.totalAdsCompleted ?? 0);
+  const totalPointsIssued = Number(s.totalPointsAwarded ?? 0);
+  return {
+    status: 200,
+    body: {
+      totalUsers: totalReviewers + totalBrands,
+      totalReviewers,
+      totalBrands,
+      totalAdmins: 1,
+      totalAds: activeAds,
+      activeAds,
+      totalCompletions,
+      totalAdsCompleted: totalCompletions,
+      totalPointsIssued,
+      totalPointsAwarded: totalPointsIssued,
+      pendingRedemptions: 0,
+      completedRedemptions: 0,
+      totalSessions: totalCompletions,
+    },
+  };
+}
+
 async function adminStats() {
   await requireRole("admin", "super_admin");
+  const rpc = await supabase!.rpc("adspot_admin_stats");
+  if (!rpc.error && rpc.data && typeof rpc.data === "object") {
+    return { status: 200, body: rpc.data };
+  }
+  if (isOwnerSoftSession()) return adminStatsFromPublic();
   const safeCount = async (q: PromiseLike<{ count: number | null; error: unknown }>) => {
     const r = await q;
     if (r.error && isMissingRelation(r.error)) return 0;
@@ -809,13 +862,11 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
   const params = parseQuery(relativePath);
   const body = parseBody(init) as Record<string, unknown>;
 
-  // Soft owner has no JWT / RLS — serve /auth/me + empty admin GETs so UI does not spam unauthorized.
+  // Soft owner has no JWT / RLS — keep /auth/me and real public-backed admin stats.
+  // Do not return all-zero admin payloads; that is the empty-queue / empty-counts bug.
   if (isOwnerSoftSession() && !(await getSessionToken())) {
     if (path === "/auth/me" && method === "GET") return authMe();
-    if (method === "GET" && (path.startsWith("/admin/") || path === "/admin")) {
-      return adminEmptyPayload();
-    }
-    // Partners still work via localStorage seed so AdSpotX admin + portal demos stay usable.
+    if (path === "/admin/stats" && method === "GET") return adminStatsFromPublic();
     if (path.startsWith("/partners")) {
       /* fall through — partnersApi uses local store when tables/JWT unavailable */
     }
@@ -1126,7 +1177,10 @@ export async function routeSupabaseApi(relativePath: string, init?: RequestInit)
       (ex.status === 401 || isOwnerSoftSession() || /Unauthorized|Profile not found/i.test(ex.message || ""))
     ) {
       const email = await resolveAuthEmail().catch(() => "");
-      if (isOwnerSoftSession() || isOwnerEmail(email)) return adminEmptyPayload();
+      if (isOwnerSoftSession() || isOwnerEmail(email)) {
+        if (path === "/admin/stats") return adminStatsFromPublic();
+        return adminEmptyPayload();
+      }
     }
     const status = ex.status ?? 500;
     return err(status, status === 401 ? "unauthorized" : status === 403 ? "forbidden" : "internal_error", ex.message);

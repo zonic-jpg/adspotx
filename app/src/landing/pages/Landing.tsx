@@ -29,7 +29,14 @@ import {
   type PublicVideoItem,
 } from "@workspace/api-client-react";
 
-type PublicVideo = PublicVideoItem;
+type PublicVideo = PublicVideoItem & { assetUrl?: string };
+
+
+const SEED_PACKAGES = [
+  { id: "seed-pkg-1", name: "Starter Pulse", description: "1k focused reviews for a single campaign", price: 45000, adSlots: 1, maxImpressions: 1000, featured: false },
+  { id: "seed-pkg-2", name: "Growth Wave", description: "5k reviews with demographic filters", price: 180000, adSlots: 3, maxImpressions: 5000, featured: true },
+  { id: "seed-pkg-3", name: "Enterprise Maze", description: "20k reviews + AI insight pack", price: 650000, adSlots: 8, maxImpressions: 20000, featured: false },
+];
 
 const REVIEWER_BENEFITS = [
   {
@@ -81,11 +88,15 @@ export default function Landing() {
     isLoading: packagesLoading,
     isError: packagesError,
   } = useGetPublicPackages({ query: { queryKey: getGetPublicPackagesQueryKey() } });
-  const packageList = packages?.packages ?? [];
+  const apiPackages = packages?.packages ?? [];
+  const packageList = apiPackages.length ? apiPackages : SEED_PACKAGES;
+  const campaignList = (videos?.videos ?? []) as PublicVideo[];
   const [selectedVideo, setSelectedVideo] = useState<PublicVideo | null>(null);
 
   const getEmbedUrl = (video: PublicVideo) =>
     `https://player.vimeo.com/video/${video.vimeoId}?autoplay=1&title=0&byline=0&portrait=0&dnt=1`;
+  const campaignThumb = (video: PublicVideo) =>
+    video.vimeoId ? `https://vumbnail.com/${video.vimeoId}.jpg` : "/hero-demo.mp4";
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-background text-foreground">
@@ -274,21 +285,31 @@ export default function Landing() {
               <p className="text-muted-foreground mt-1">Sign up to review and earn points.</p>
             </div>
 
-            {videos?.videos && videos.videos.length > 0 ? (
+            {campaignList.length > 0 ? (
               <>
               <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
-                {videos.videos.map((video) => (
+                {campaignList.map((video) => (
                   <button
                     key={video.id}
                     onClick={() => setSelectedVideo(video)}
                     className="group flex-none w-[260px] sm:w-[280px] snap-start rounded-lg border border-border bg-card overflow-hidden text-left hover:border-primary/40 transition-colors"
                   >
                     <div className="aspect-video bg-zinc-900 relative">
+                      {video.vimeoId ? (
                       <img
-                        src={`https://vumbnail.com/${video.vimeoId}.jpg`}
+                        src={campaignThumb(video)}
                         alt={video.title}
                         className="w-full h-full object-cover"
                       />
+                      ) : (
+                      <video
+                        src={video.assetUrl || "/hero-demo.mp4"}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="w-full h-full object-cover"
+                      />
+                      )}
                       <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
                         <PlayCircle size={36} className="text-white" />
                       </div>
@@ -329,7 +350,7 @@ export default function Landing() {
                     </button>
                   </div>
                   <div className="aspect-video bg-black relative">
-                    {selectedVideo && (
+                    {selectedVideo && selectedVideo.vimeoId ? (
                       <iframe
                         key={selectedVideo.id}
                         src={getEmbedUrl(selectedVideo)}
@@ -339,7 +360,17 @@ export default function Landing() {
                         allowFullScreen
                         onLoad={() => setLightboxLoaded(true)}
                       />
-                    )}
+                    ) : selectedVideo ? (
+                      <video
+                        key={selectedVideo.id}
+                        src={selectedVideo.assetUrl || "/hero-demo.mp4"}
+                        controls
+                        autoPlay
+                        playsInline
+                        className="absolute inset-0 h-full w-full"
+                        onLoadedData={() => setLightboxLoaded(true)}
+                      />
+                    ) : null}
                     {!lightboxLoaded && (
                       <div className="absolute inset-0 flex items-center justify-center text-muted-foreground text-sm">
                         Loading…

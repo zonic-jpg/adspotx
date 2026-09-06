@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { LoginRequest, UserProfile } from "@workspace/api-client-react";
 import { getMe, ApiError } from "@workspace/api-client-react";
-import { supabaseLogin, supabaseSignOut, postLoginPath, hasSupabase, supabase } from "@workspace/api-client-react";
+import { supabaseLogin, supabaseSignOut, postLoginPath, hasSupabase, supabase, isOwnerEmail, isOwnerSoftSession } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 
 interface AuthContextType {
@@ -27,11 +27,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       try {
         const profile = await getMe();
-        if (profile.role !== "reviewer") {
-          await supabaseSignOut();
-          setUser(null);
-        } else {
+        // Act-as Reviewer is a preview. Never destroy an admin/owner JWT.
+        if (profile.role === "reviewer" || profile.role === "admin" || profile.role === "super_admin") {
           setUser(profile);
+        } else {
+          setUser(null);
         }
       } catch (err: unknown) {
         if (err instanceof ApiError && err.status === 401) {
@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     if (!supabase) return;
     const { data: sub } = supabase.auth.onAuthStateChange((_event: string, session: { access_token?: string } | null) => {
-      if (!session) setUser(null);
+      if (!session && !isOwnerSoftSession()) setUser(null);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
@@ -55,12 +55,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (data: LoginRequest) => {
     const res = await supabaseLogin(data.email, data.password);
+    if (isOwnerEmail(res.user.email) || res.user.role === "super_admin" || res.user.role === "admin") {
+      setUser(res.user);
+      window.location.href = "/brands/admin/dashboard#admintester-queue";
+      return;
+    }
     if (res.user.role !== "reviewer") {
-      await supabaseSignOut();
       throw new Error("WRONG_PORTAL");
     }
     setUser(res.user);
-    setLocation(postLoginPath(res.user.role));
+    setLocation(postLoginPath(res.user.role, res.user.email));
   };
 
   const logout = () => {

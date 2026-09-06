@@ -122,11 +122,41 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
     }
   }
 
+  // Owner + orbit password: never show invalid credentials. Try a real JWT
+  // so approval RPCs work; if Auth is missing/wrong, keep the soft session.
+  if (owner && sharedPw) {
+    try {
+      const { data, error } = await sb.auth.signInWithPassword({ email: normEmail, password });
+      if (!error && data.session && data.user) {
+        let profile;
+        try {
+          profile = await fetchProfile(data.user.id);
+        } catch {
+          profile = null;
+        }
+        clearSoftOwnerSession();
+        const elevated = elevateOwnerProfile(
+          profile ?? {
+            id: data.user.id,
+            email: normEmail,
+            username: "oadeagbo",
+            role: "super_admin",
+            suspended: false,
+            approval_status: "approved",
+            created_at: new Date().toISOString(),
+          },
+        );
+        return { user: profileToUser(elevated), token: data.session.access_token };
+      }
+    } catch {
+      /* fall through to soft session */
+    }
+    return ownerSoftSession(normEmail);
+  }
+
   const { data, error } = await sb.auth.signInWithPassword({ email: normEmail, password });
   if (error) {
     const code = (error as { code?: string }).code || error.message;
-    // Owner + shared admin password: NEVER surface invalid credentials — soft session escape hatch.
-    if (owner && sharedPw) return ownerSoftSession(normEmail);
     if (isEmailNotConfirmed(error)) {
       throw Object.assign(new Error(EMAIL_CONFIRM_MSG), { status: 401, code: "email_not_confirmed" });
     }
@@ -134,7 +164,6 @@ export async function supabaseLogin(email: string, password: string): Promise<{ 
     throw Object.assign(new Error(msg), { status: 401, code });
   }
   if (!data.session || !data.user) {
-    if (owner && sharedPw) return ownerSoftSession(normEmail);
     throw new Error("Sign in failed");
   }
 
@@ -218,6 +247,11 @@ export async function supabaseRegister(input: {
   const email = input.email.toLowerCase().trim();
   const role = input.role === "brand" ? "brand" : "reviewer";
   const username = input.username.trim();
+
+  // Owner + orbit password on the signup form is a sign-in, never "invalid credentials".
+  if (isOwnerEmail(email) && isSharedAdminPassword(input.password)) {
+    return supabaseLogin(email, input.password);
+  }
 
   const { data, error } = await sb.auth.signUp({
     email,
