@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     const userId = authData.user.id;
 
     const { data: session } = await admin
-      .from("review_sessions")
+      .from("adspot_review_sessions")
       .select("*")
       .eq("id", sessionId)
       .eq("user_id", userId)
@@ -35,14 +35,14 @@ Deno.serve(async (req) => {
     if (!session) return errorResponse("Review session not found", 404, "not_found");
     if (session.status !== "in_progress") return errorResponse("Review already completed", 400);
 
-    const { data: ad } = await admin.from("ads").select("*").eq("id", session.ad_id).single();
+    const { data: ad } = await admin.from("adspot_ads").select("*").eq("id", session.ad_id).single();
     if (!ad) return errorResponse("Ad not found", 404);
 
     if (watchSeconds < ad.min_watch_seconds) {
       return errorResponse(`Must watch at least ${ad.min_watch_seconds} seconds`, 400);
     }
 
-    const { data: questions } = await admin.from("questions").select("id").eq("ad_id", session.ad_id);
+    const { data: questions } = await admin.from("adspot_questions").select("id").eq("ad_id", session.ad_id);
     const expectedIds = new Set((questions ?? []).map((q) => q.id));
     const submitted = (answers ?? []) as Array<{ questionId: string; answerText?: string; answerValue?: string }>;
     if (submitted.length !== expectedIds.size) {
@@ -55,14 +55,12 @@ Deno.serve(async (req) => {
     }
 
     const { data: updated, error: updErr } = await admin
-      .from("review_sessions")
+      .from("adspot_review_sessions")
       .update({
         status: "completed",
         completed_at: new Date().toISOString(),
         watch_seconds: watchSeconds,
         points_awarded: pointsAwarded,
-        comment: comment ?? null,
-        device_fingerprint: deviceFingerprint ?? null,
       })
       .eq("id", sessionId)
       .eq("status", "in_progress")
@@ -71,7 +69,7 @@ Deno.serve(async (req) => {
     if (updErr || !updated) return errorResponse("Review already completed", 400);
 
     if (submitted.length) {
-      await admin.from("answers").insert(
+      await admin.from("adspot_answers").insert(
         submitted.map((a) => ({
           review_session_id: sessionId,
           question_id: a.questionId,
@@ -81,42 +79,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    await admin.from("points_ledger").insert({
+    await admin.from("adspot_points_ledger").insert({
       user_id: userId,
       amount: pointsAwarded,
       source: "review",
-      reference_id: sessionId,
-      description: `Completed review for "${ad.title}"`,
+      session_id: sessionId,
+      description: `Completed review for "${ad.title}"${comment ? ` — "${comment}"` : ""}`,
     });
 
-    const { data: ledger } = await admin.from("points_ledger").select("amount").eq("user_id", userId);
+    const { data: ledger } = await admin.from("adspot_points_ledger").select("amount").eq("user_id", userId);
     const totalBalance = (ledger ?? []).reduce((s, r) => s + r.amount, 0);
-
-    // Weighted gift draw
-    const { data: pool } = await admin
-      .from("gift_catalog")
-      .select("*")
-      .eq("active", true);
-    let gift = null;
-    if (pool?.length) {
-      const total = pool.reduce((n, g) => n + Math.max(1, g.weight ?? 1), 0);
-      let r = Math.random() * total;
-      let chosen = pool[0];
-      for (const g of pool) {
-        r -= Math.max(1, g.weight ?? 1);
-        if (r <= 0) { chosen = g; break; }
-      }
-      const { data: grant } = await admin.from("gift_grants").insert({
-        user_id: userId,
-        gift_id: chosen.id,
-        review_session_id: sessionId,
-        type: chosen.type,
-        label: chosen.label,
-        value: chosen.value,
-        status: "granted",
-      }).select().single();
-      gift = grant;
-    }
 
     return jsonResponse({
       session: {
@@ -128,7 +100,11 @@ Deno.serve(async (req) => {
       },
       pointsAwarded,
       totalBalance,
-      gift,
+      // No gift-draw feature in the current schema (adspot_ad_rewards /
+      // claim-reward already cover brand-side rewards); kept as null so
+      // the client's existing "gift" handling doesn't need a change.
+      gift: null,
+      deviceFingerprint: deviceFingerprint ?? null,
     });
   } catch (e) {
     return errorResponse((e as Error).message, 500, "internal_error");

@@ -16,15 +16,13 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { packageId } = await req.json();
 
-    const { data: pkg } = await admin.from("ad_packages").select("*").eq("id", packageId).single();
+    const { data: pkg } = await admin.from("adspot_packages").select("*").eq("id", packageId).single();
     if (!pkg) return errorResponse("Package not found", 404);
 
-    await admin.from("events_log").insert({
+    await admin.from("adspot_events_log").insert({
       event_type: "package_purchase",
       actor_id: authData.user.id,
-      entity_type: "ad_package",
-      entity_id: packageId,
-      metadata: { packageName: pkg.name, price: pkg.price },
+      payload: { packageId, packageName: pkg.name, priceNgn: pkg.price_ngn },
     });
 
     return jsonResponse({ ok: true, package: pkg, note: "Payment stub — log only" });

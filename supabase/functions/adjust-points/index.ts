@@ -8,7 +8,7 @@ async function requireAdmin(authHeader: string) {
   const { data: authData } = await supabaseUser.auth.getUser();
   if (!authData.user) throw new Error("Unauthorized");
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data: profile } = await admin.from("profiles").select("role").eq("id", authData.user.id).single();
+  const { data: profile } = await admin.from("adspot_profiles").select("role").eq("id", authData.user.id).single();
   if (!profile || !["admin", "super_admin"].includes(profile.role)) throw new Error("Forbidden");
   return { admin, userId: authData.user.id };
 }
@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
     const { userId, amount, description } = body;
     if (!userId || typeof amount !== "number") return errorResponse("userId and amount required", 400);
 
-    const { data, error } = await admin.from("points_ledger").insert({
+    const { data, error } = await admin.from("adspot_points_ledger").insert({
       user_id: userId,
       amount,
       source: "admin_grant",

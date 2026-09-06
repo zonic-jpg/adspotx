@@ -16,22 +16,23 @@ Deno.serve(async (req) => {
     const { rewardId } = await req.json();
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const { data: reward } = await admin.from("ad_rewards").select("*").eq("id", rewardId).eq("active", true).single();
+    const { data: reward } = await admin.from("adspot_ad_rewards").select("*").eq("id", rewardId).eq("is_active", true).single();
     if (!reward) return errorResponse("Reward not found", 404);
 
-    const { count } = await admin.from("reward_claims").select("id", { count: "exact", head: true }).eq("reward_id", rewardId);
+    const { count } = await admin.from("adspot_reward_claims").select("id", { count: "exact", head: true }).eq("reward_id", rewardId);
     if (reward.max_claims && (count ?? 0) >= reward.max_claims) {
       return errorResponse("All reward slots claimed", 409, "conflict");
     }
 
     const code = `ADSPOT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
-    const { data: claim, error } = await admin.from("reward_claims").insert({
+    const { data: claim, error } = await admin.from("adspot_reward_claims").insert({
       user_id: authData.user.id,
       reward_id: rewardId,
       redemption_code: code,
-      status: "claimed",
     }).select().single();
     if (error) return errorResponse(error.message, 400);
+
+    await admin.from("adspot_ad_rewards").update({ claims_count: (reward.claims_count ?? 0) + 1 }).eq("id", rewardId);
 
     return jsonResponse({ claim, redemptionCode: code });
   } catch (e) {

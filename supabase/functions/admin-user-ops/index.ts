@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
     if (!authData.user) return errorResponse("Unauthorized", 401);
 
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: actor } = await admin.from("profiles").select("role, email").eq("id", authData.user.id).single();
+    const { data: actor } = await admin.from("adspot_profiles").select("role, email").eq("id", authData.user.id).single();
     if (!actor || actor.role !== "super_admin") return errorResponse("Forbidden", 403);
 
     const body = await req.json();
@@ -29,28 +29,29 @@ Deno.serve(async (req) => {
         email_confirm: true,
       });
       if (error) return errorResponse(error.message, 400);
-      await admin.from("profiles").insert({
+      await admin.from("adspot_profiles").insert({
         id: created.user.id,
         email,
         username,
         role,
         approval_status: "approved",
+        suspended: false,
       });
       if (role === "brand") {
-        await admin.from("brands").insert({ user_id: created.user.id, company_name: companyName ?? username });
+        await admin.from("adspot_brands").insert({ user_id: created.user.id, company_name: companyName ?? username });
       }
       return jsonResponse({ userId: created.user.id });
     }
 
     if (action === "change_role") {
-      const { data: target } = await admin.from("profiles").select("email").eq("id", userId).single();
+      const { data: target } = await admin.from("adspot_profiles").select("email").eq("id", userId).single();
       if (target?.email === OWNER_EMAIL) return errorResponse("Cannot change owner role", 403);
-      await admin.from("profiles").update({ role }).eq("id", userId);
+      await admin.from("adspot_profiles").update({ role }).eq("id", userId);
       return jsonResponse({ ok: true });
     }
 
     if (action === "delete") {
-      const { data: target } = await admin.from("profiles").select("email").eq("id", userId).single();
+      const { data: target } = await admin.from("adspot_profiles").select("email").eq("id", userId).single();
       if (target?.email === OWNER_EMAIL) return errorResponse("Cannot delete owner", 403);
       await admin.auth.admin.deleteUser(userId);
       return jsonResponse({ ok: true });

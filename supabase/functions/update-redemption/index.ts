@@ -14,11 +14,11 @@ Deno.serve(async (req) => {
     if (!authData.user) return errorResponse("Unauthorized", 401);
 
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile } = await admin.from("profiles").select("role").eq("id", authData.user.id).single();
+    const { data: profile } = await admin.from("adspot_profiles").select("role").eq("id", authData.user.id).single();
     if (!profile || !["admin", "super_admin"].includes(profile.role)) return errorResponse("Forbidden", 403);
 
     const { id, status } = await req.json();
-    const { data, error } = await admin.from("redemptions").update({ status }).eq("id", id).select().single();
+    const { data, error } = await admin.from("adspot_redemptions").update({ status }).eq("id", id).select().single();
     if (error) return errorResponse(error.message, 400);
     return jsonResponse({ redemption: data });
   } catch (e) {

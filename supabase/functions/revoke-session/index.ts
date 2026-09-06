@@ -14,25 +14,25 @@ Deno.serve(async (req) => {
     if (!authData.user) return errorResponse("Unauthorized", 401);
 
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile } = await admin.from("profiles").select("role").eq("id", authData.user.id).single();
+    const { data: profile } = await admin.from("adspot_profiles").select("role").eq("id", authData.user.id).single();
     if (!profile || !["admin", "super_admin"].includes(profile.role)) return errorResponse("Forbidden", 403);
 
     const { sessionId } = await req.json();
-    const { data: session } = await admin.from("review_sessions").select("*").eq("id", sessionId).single();
+    const { data: session } = await admin.from("adspot_review_sessions").select("*").eq("id", sessionId).single();
     if (!session) return errorResponse("Session not found", 404);
 
     if (session.points_awarded && session.status === "completed") {
-      await admin.from("points_ledger").insert({
+      await admin.from("adspot_points_ledger").insert({
         user_id: session.user_id,
         amount: -session.points_awarded,
         source: "admin_grant",
-        reference_id: sessionId,
+        session_id: sessionId,
         description: "Session revoked by admin",
       });
     }
 
-    await admin.from("answers").delete().eq("review_session_id", sessionId);
-    await admin.from("review_sessions").delete().eq("id", sessionId);
+    await admin.from("adspot_answers").delete().eq("review_session_id", sessionId);
+    await admin.from("adspot_review_sessions").delete().eq("id", sessionId);
 
     return jsonResponse({ ok: true });
   } catch (e) {
