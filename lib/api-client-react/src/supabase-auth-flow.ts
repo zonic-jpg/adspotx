@@ -91,10 +91,21 @@ function elevateOwnerProfile(profile: {
   return { ...profile, role: "super_admin" as const, approval_status: "approved" as const };
 }
 
-async function waitForProfile(userId: string, attempts = 6) {
+async function waitForProfile(userId: string, attempts = 14) {
+  // The signup trigger (adspot_handle_new_user) is the source of truth for
+  // profile creation and normally lands well under a second, but it's still
+  // a second network hop (Postgres trigger → row insert) after signUp()
+  // returns. The original 6×250ms (1.5s total) budget meant any DB hiccup
+  // surfaced to the user as "Profile creation failed" — indistinguishable
+  // from a real signup failure even though the auth.users row (and often the
+  // profile itself, a moment later) was created fine. Backing off instead of
+  // hammering every 250ms, and extending the total budget to ~6s, gives real
+  // headroom under load without meaningfully slowing down the common case
+  // (most attempts still resolve on try 1 or 2).
   let profile = await fetchProfile(userId);
   for (let i = 0; !profile && i < attempts; i++) {
-    await new Promise((r) => setTimeout(r, 250));
+    const delay = Math.min(250 * Math.pow(1.3, i), 800);
+    await new Promise((r) => setTimeout(r, delay));
     profile = await fetchProfile(userId);
   }
   return profile;

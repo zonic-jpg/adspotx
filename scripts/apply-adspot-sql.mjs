@@ -60,6 +60,18 @@ async function main() {
     "supabase/migrations/20260830_adspot_partners_rewards.sql",
     "supabase/migrations/20260830_adspot_leaderboard_integrity.sql",
     "supabase/migrations/20260902_adspot_admin_access_public_stats.sql",
+    // These four were ALSO written but never listed here — applied to the live
+    // project by hand at some point (confirmed present via the Supabase
+    // Management API), but a fresh/rebuilt project would silently never get
+    // them since this script is the only automated apply path. All four are
+    // idempotent (`create or replace function` / `if not exists`), so
+    // including them here is safe to re-run against a DB that already has
+    // them. Auth-critical: without these, the admin-gate orbit-password
+    // fallback and JWT-owner recognition silently don't exist.
+    "supabase/migrations/20260904_orbit_owner_queue.sql",
+    "supabase/migrations/20260904_owner_admin_jwt_queue.sql",
+    "supabase/migrations/20260906150000_add_adspot_answers_table.sql",
+    "supabase/migrations/20260830_adspot_stats_seed.sql",
   ]) {
     if (!(await runFile(f))) failed.push(f);
   }

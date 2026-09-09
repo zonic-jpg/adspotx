@@ -348,6 +348,28 @@ export async function customFetch<T = unknown>(
     return routed.body as T;
   }
 
+  // No Supabase backend and this is an /api/* call: there is nothing left to
+  // route it to (Express/Netlify demo backends are not part of this deploy —
+  // see netlify.toml). Without this guard, a request here falls through to a
+  // real fetch() against the SPA's own origin, and the catch-all `/* ->
+  // /index.html 200` redirect (app/public/_redirects) returns the app shell
+  // — a 200 OK containing HTML, not JSON — for every auth/register/login
+  // call. That reads to a user as "sign in isn't responding" with no
+  // diagnosable error anywhere. Fail loudly and specifically instead, so a
+  // future misconfigured deploy (missing VITE_SUPABASE_URL/ANON_KEY) breaks
+  // in an obvious, debuggable way rather than a silent one.
+  if (!hasSupabase && url.includes("/api")) {
+    const fakeResponse = new Response(
+      JSON.stringify({ message: "Sign-in is unavailable — Supabase is not configured for this deploy." }),
+      { status: 503, statusText: "Service Unavailable", headers: { "content-type": "application/json" } },
+    );
+    throw new ApiError(
+      fakeResponse,
+      { message: "Sign-in is unavailable — Supabase is not configured for this deploy." },
+      { method, url },
+    );
+  }
+
   if (init.body != null && (method === "GET" || method === "HEAD")) {
     throw new TypeError(`customFetch: ${method} requests cannot have a body.`);
   }
