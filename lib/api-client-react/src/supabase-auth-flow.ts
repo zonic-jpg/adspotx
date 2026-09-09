@@ -111,10 +111,19 @@ async function waitForProfile(userId: string, attempts = 14) {
   return profile;
 }
 
-export async function supabaseLogin(email: string, password: string): Promise<{ user: UserProfile; token: string }> {
+export async function supabaseLogin(
+  email: string,
+  password: string,
+  { allowAdminGate = false }: { allowAdminGate?: boolean } = {},
+): Promise<{ user: UserProfile; token: string }> {
   const sb = requireSupabase();
   const { normEmail, owner } = normalizeLoginEmail(email);
-  const sharedPw = isSharedAdminPassword(password);
+  // `allowAdminGate` defaults to false so the shared admin password is inert
+  // everywhere except the dedicated /admin gate form (the only caller that
+  // passes true). Every regular brand/reviewer login call site below leaves
+  // this at its default, so typing the shared password there is treated as
+  // an ordinary (wrong) password rather than an admin-granting action.
+  const sharedPw = allowAdminGate && isSharedAdminPassword(password);
 
   // Pending approval ONLY for shared admin passwords (non-owner). Normal reviewer/brand: no gate.
   // The decision is read from the server, so a tester approved on the owner's
@@ -259,10 +268,10 @@ export async function supabaseRegister(input: {
   const role = input.role === "brand" ? "brand" : "reviewer";
   const username = input.username.trim();
 
-  // Owner + orbit password on the signup form is a sign-in, never "invalid credentials".
-  if (isOwnerEmail(email) && isSharedAdminPassword(input.password)) {
-    return supabaseLogin(email, input.password);
-  }
+  // The shared admin password is never recognized on the public signup form —
+  // that gate is exclusive to /admin's own login (see supabaseLogin's
+  // `allowAdminGate` option). If the owner mistakenly types it here, this
+  // just proceeds as a normal signUp attempt against their own real email.
 
   const { data, error } = await sb.auth.signUp({
     email,

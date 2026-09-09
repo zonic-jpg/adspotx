@@ -1,4 +1,4 @@
-import { PlayCircle, TrendingUp, ShieldCheck, ArrowRight } from "lucide-react";
+import { PlayCircle, TrendingUp, ArrowRight } from "lucide-react";
 
 type RegisterCTAsProps = {
   className?: string;
@@ -48,14 +48,9 @@ const ROLES = [
     icon: TrendingUp,
     primary: false,
   },
-  {
-    id: "admin",
-    title: "Admin",
-    description: "Manage users, ads, and payouts.",
-    href: "/brands/login",
-    icon: ShieldCheck,
-    primary: false,
-  },
+  // Deliberately no "admin" entry here — RoleEntry renders on public,
+  // unauthenticated pages (landing, earn login, brand login). Admin sign-in
+  // lives exclusively behind the /admin route's own dedicated gate.
 ] as const;
 
 type RoleEntryProps = {

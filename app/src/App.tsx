@@ -9,6 +9,7 @@ import { SectionErrorBoundary } from "./components/SectionErrorBoundary";
 import { EarnSection } from "@earn/section";
 import { BrandSection } from "@brands/section";
 import { PartnerSection } from "./partners/section";
+import AdminGate from "@brands/pages/AdminGate";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,9 +46,15 @@ export default function App() {
           <Route path="/login">{() => <Redirect to="/earn/login" />}</Route>
           <Route path="/register">{() => <Redirect to="/earn/register" />}</Route>
 
-          {/* Legacy /admin URLs — admin console lives under /brands/admin */}
-          <Route path="/admin">{() => <Redirect to="/brands/admin/dashboard" />}</Route>
-          <Route path="/admin/:rest*">{(params) => <Redirect to={`/brands/admin/${params["rest*"] ?? ""}`} />}</Route>
+          {/* The ONLY admin sign-in surface in the app — never linked from any
+              public nav/header/footer. AdminGate itself sends an already-
+              elevated visitor on to /brands/admin/dashboard. */}
+          <Route path="/admin">
+            <SectionErrorBoundary section="admin-gate"><AdminGate /></SectionErrorBoundary>
+          </Route>
+          <Route path="/admin/:rest*">
+            <SectionErrorBoundary section="admin-gate"><AdminGate /></SectionErrorBoundary>
+          </Route>
 
           <Route component={NotFound} />
         </Switch>

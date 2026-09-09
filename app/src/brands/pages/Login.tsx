@@ -10,12 +10,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@brands/components/ui/input";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { RoleEntry } from "../../components/RoleEntry";
-import {
-  AWAITING_MSG,
-  isSharedAdminPassword,
-  resolveAdminGateLogin,
-  isOwnerEmail,
-} from "../../lib/adminTesterApproval";
+import { AWAITING_MSG, isOwnerEmail } from "../../lib/adminTesterApproval";
 import { PasswordRecovery } from "../../components/PasswordRecovery";
 import { publicError } from "../../lib/publicMessage";
 
@@ -71,15 +66,9 @@ export default function Login() {
     }
     setPending(true);
     try {
-      // The gate now asks the server, so keep the button in its pending state
-      // while it answers.
-      if (isSharedAdminPassword(values.password)) {
-        const gate = await resolveAdminGateLogin(values.email, values.password, "adspotx");
-        if (!gate.ok) {
-          setFormError(gate.message || AWAITING_MSG);
-          return;
-        }
-      }
+      // Regular brand/reviewer sign-in only — the shared admin password is
+      // not recognized here at all (supabaseLogin's allowAdminGate defaults
+      // to false). Admin sign-in lives exclusively on /admin's own form.
       const data = await supabaseLogin(values.email, values.password);
       if (data.user.role === "reviewer" && !isOwnerEmail(data.user.email ?? "")) {
         setFormError("Reviewer accounts sign in at the Earn portal (/earn/login).");
@@ -117,9 +106,9 @@ export default function Login() {
       <main className="flex-1 flex items-center justify-center px-4 py-10">
         <div className="w-full max-w-md">
           <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold mb-1">Brand or admin sign in</h1>
+            <h1 className="text-2xl font-bold mb-1">Brand sign in</h1>
             <p className="text-sm text-muted-foreground">
-              Use the same login for brand and admin accounts.
+              Sign in to manage your campaigns.
             </p>
           </div>
 

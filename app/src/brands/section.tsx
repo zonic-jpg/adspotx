@@ -51,7 +51,10 @@ function ProtectedRoute({
       </div>
     );
   }
-  if (!user) return <Redirect to="/login" />;
+  // Admin-only pages send a signed-out visitor to the dedicated /admin gate,
+  // never to the regular brand login — that gate is the only place the
+  // shared admin password is ever accepted.
+  if (!user) return <Redirect to={adminOnly ? "~/admin" : "/login"} />;
 
   // Owner email is always elevated even if a stale profile row says brand/reviewer.
   const elevated = canActAs(user.role) || isOwnerEmail(user.email ?? "");
