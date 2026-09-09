@@ -17,6 +17,8 @@ import { useToast } from "@brands/hooks/use-toast";
 import { ChevronLeft, ChevronRight, Plus, Trash2, ArrowUp, ArrowDown, Upload, Link, X } from "lucide-react";
 import { normalizeAssetPayload } from "../../../lib/adAssetNormalize";
 import { publicError } from "../../../lib/publicMessage";
+import { compressImageFile } from "../../../lib/imageCompression";
+import { loadCreateAdDraft, saveCreateAdDraft, clearCreateAdDraft, type CreateAdDraft } from "../../lib/adDraft";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -66,32 +68,76 @@ const createAdSchema = z
 
 type CreateAdFormValues = z.infer<typeof createAdSchema>;
 
+// Read once per mount — used to seed several pieces of state below.
+function getInitialDraft(): CreateAdDraft | null {
+  return loadCreateAdDraft();
+}
+
 export default function CreateAd() {
-  const [step, setStep] = useState(1);
+  const [initialDraft] = useState<CreateAdDraft | null>(getInitialDraft);
+  // The upload never finished before the tab closed — the File itself
+  // can't be restored, so we drop the stale file name and ask the brand
+  // to re-select it. Everything else in the draft is kept.
+  const draftNeedsReupload = Boolean(
+    initialDraft && initialDraft.assetInputMode === "upload" && !initialDraft.uploadComplete && initialDraft.uploadedFileName
+  );
+  const hadDraft = Boolean(initialDraft);
+
+  const [step, setStep] = useState(initialDraft?.step ?? 1);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createMutation = useCreateBrandAd();
-  const [assetInputMode, setAssetInputMode] = useState<"url" | "upload">("upload");
-  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [assetInputMode, setAssetInputMode] = useState<"url" | "upload">(initialDraft?.assetInputMode ?? "upload");
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(
+    draftNeedsReupload ? null : initialDraft?.uploadedFileName ?? null
+  );
   const [isDragging, setIsDragging] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewKind, setPreviewKind] = useState<"image" | "video" | null>(null);
+  // A restored draft has no blob preview (blob: URLs die with the page), but
+  // if the upload had already completed, the persisted assetUrl is a real,
+  // durable URL we can preview directly.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(
+    !draftNeedsReupload && initialDraft?.uploadComplete && initialDraft.values.assetUrl ? initialDraft.values.assetUrl : null
+  );
+  const [previewKind, setPreviewKind] = useState<"image" | "video" | null>(
+    !draftNeedsReupload && initialDraft?.uploadComplete && initialDraft.values.assetUrl
+      ? (initialDraft.values.assetType === "image" ? "image" : "video")
+      : null
+  );
+  const [uploadComplete, setUploadComplete] = useState(
+    !draftNeedsReupload && Boolean(initialDraft?.uploadComplete)
+  );
+  const [needsReuploadNotice, setNeedsReuploadNotice] = useState(draftNeedsReupload);
 
   const form = useForm<CreateAdFormValues>({
     resolver: zodResolver(createAdSchema),
     defaultValues: {
-      title: "",
-      description: "",
-      assetUrl: "",
-      assetType: "video",
-      minWatchSeconds: 15,
-      pointReward: 10,
-      proverbQuestion: "",
-      proverbAnswer: "",
-      proverbBonusPoints: 5,
-      questions: [],
+      title: initialDraft?.values.title ?? "",
+      description: initialDraft?.values.description ?? "",
+      assetUrl: draftNeedsReupload ? "" : initialDraft?.values.assetUrl ?? "",
+      assetType: initialDraft?.values.assetType ?? "video",
+      minWatchSeconds: initialDraft?.values.minWatchSeconds ?? 15,
+      pointReward: initialDraft?.values.pointReward ?? 10,
+      proverbQuestion: initialDraft?.values.proverbQuestion ?? "",
+      proverbAnswer: initialDraft?.values.proverbAnswer ?? "",
+      proverbBonusPoints: initialDraft?.values.proverbBonusPoints ?? 5,
+      questions: initialDraft?.values.questions ?? [],
     },
   });
+
+  // One-time notice on mount for a restored draft.
+  useEffect(() => {
+    if (!hadDraft) return;
+    if (draftNeedsReupload) {
+      toast({
+        title: "Draft restored",
+        description: "We recovered your in-progress campaign, but the upload hadn't finished — please re-select your creative file.",
+      });
+    } else {
+      toast({ title: "Draft restored", description: "We picked up right where you left off." });
+    }
+    // Intentionally mount-only: this is a one-time notice for the draft
+    // captured when the component first rendered.
+  }, []);
 
   const { fields, append, remove, move } = useFieldArray({
     control: form.control,
@@ -108,6 +154,7 @@ export default function CreateAd() {
           ? response.objectPath
           : `${window.location.origin}/api/storage${response.objectPath}`);
       form.setValue("assetUrl", objectUrl, { shouldValidate: true });
+      setUploadComplete(true);
       toast({ title: "Upload complete", description: "Your file has been uploaded successfully." });
     },
     onError: (error: Error) => {
@@ -142,14 +189,36 @@ export default function CreateAd() {
       form.setValue("assetType", "video");
     }
 
-    setUploadedFileName(file.name);
+    // Resize + re-encode images client-side before they ever leave the
+    // browser — brands could otherwise ship an unoptimized multi-MB photo
+    // as their ad creative. Never blocks the upload: falls back to the
+    // original file on any failure. Video isn't compressed (see
+    // imageCompression.ts for why) and uploads as-is.
+    let uploadTarget = file;
+    if (isImage) {
+      const result = await compressImageFile(file);
+      uploadTarget = result.file;
+      if (result.compressed) {
+        const savedPct = Math.round((1 - result.finalSize / result.originalSize) * 100);
+        if (savedPct >= 10) {
+          toast({
+            title: "Image optimized",
+            description: `Reduced from ${(result.originalSize / 1024 / 1024).toFixed(1)}MB to ${(result.finalSize / 1024 / 1024).toFixed(1)}MB before upload.`,
+          });
+        }
+      }
+    }
+
+    setUploadedFileName(uploadTarget.name);
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
+      return URL.createObjectURL(uploadTarget);
     });
     setPreviewKind(isImage ? "image" : "video");
+    setUploadComplete(false);
+    setNeedsReuploadNotice(false);
     form.setValue("assetUrl", "", { shouldValidate: false });
-    await uploadFile(file);
+    await uploadFile(uploadTarget);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,6 +236,7 @@ export default function CreateAd() {
   const clearUpload = () => {
     setUploadedFileName(null);
     setPreviewKind(null);
+    setUploadComplete(false);
     setPreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -177,6 +247,38 @@ export default function CreateAd() {
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
+
+  // Persist the wizard's form state + step position on every change so a
+  // refresh, crash, or accidental tab close restores exactly where the
+  // brand was. The File/Blob itself is never serialized — see adDraft.ts.
+  useEffect(() => {
+    const persist = (values: CreateAdFormValues) => {
+      saveCreateAdDraft({
+        step,
+        assetInputMode,
+        uploadedFileName,
+        uploadComplete,
+        values: {
+          title: values.title ?? "",
+          description: values.description ?? "",
+          assetUrl: values.assetUrl ?? "",
+          assetType: values.assetType ?? "video",
+          minWatchSeconds: values.minWatchSeconds ?? 15,
+          pointReward: values.pointReward ?? 10,
+          proverbQuestion: values.proverbQuestion ?? "",
+          proverbAnswer: values.proverbAnswer ?? "",
+          proverbBonusPoints: values.proverbBonusPoints ?? 5,
+          questions: (values.questions ?? []) as CreateAdDraft["values"]["questions"],
+        },
+      });
+    };
+
+    // Save immediately when step/upload state changes...
+    persist(form.getValues());
+    // ...and whenever any form field changes.
+    const sub = form.watch((values) => persist(values as CreateAdFormValues));
+    return () => sub.unsubscribe();
+  }, [step, assetInputMode, uploadedFileName, uploadComplete, form]);
 
   const onSubmit = (values: CreateAdFormValues) => {
     const formattedQuestions = values.questions.map(q => ({
@@ -203,6 +305,7 @@ export default function CreateAd() {
       { data: payload },
       {
         onSuccess: (data) => {
+          clearCreateAdDraft();
           toast({
             title: "Campaign launched",
             description: `Saved at ${new Date().toLocaleTimeString()}.`,
@@ -307,6 +410,11 @@ export default function CreateAd() {
 
                     {assetInputMode === "upload" ? (
                       <div className="space-y-3">
+                        {needsReuploadNotice && !uploadedFileName && (
+                          <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                            We restored the rest of your draft, but your upload hadn't finished — please re-select your creative file below.
+                          </p>
+                        )}
                         {uploadedFileName && !isUploading ? (
                           <div className="space-y-3 rounded-md border bg-muted/40 p-3">
                             <div className="flex items-center gap-3">

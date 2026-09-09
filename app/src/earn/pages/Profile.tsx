@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 import { customFetch } from "@workspace/api-client-react";
+import { useToast } from "@earn/hooks/use-toast";
+import { publicError } from "../../lib/publicMessage";
 
 async function apiFetch(path: string, opts?: RequestInit): Promise<any> {
   const normalized = path.startsWith("/api") ? path : `/api${path.startsWith("/") ? path : `/${path}`}`;
@@ -61,6 +63,7 @@ function Dropdown({ value, onChange, options, placeholder }: { value?: string; o
 }
 
 export default function Profile() {
+  const { toast } = useToast();
   const [p, setP] = useState<Profile>({});
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -79,7 +82,13 @@ export default function Profile() {
       const updated = await apiFetch("/auth/profile", { method: "PATCH", body: JSON.stringify(p) });
       setP(updated);
       setSavedAt(Date.now());
-    } catch { /* surfaced via disabled state; keep simple */ }
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't save profile",
+        description: publicError(err, "We couldn't save your profile. Please try again."),
+      });
+    }
     setSaving(false);
   };
 

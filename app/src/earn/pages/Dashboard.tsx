@@ -31,6 +31,25 @@ const SOURCE_LABEL: Record<string, string> = {
 
 const LEDGER_PAGE = 15;
 
+/** Ad-feed thumbnail with a broken-image fallback (a dead thumbUrl otherwise
+ * rendered the browser's broken-image icon instead of the existing gradient
+ * placeholder used when there's no thumbnail at all). */
+function AdFeedThumb({ src, alt }: { src: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <div className="absolute inset-0 gradient-bg opacity-25" />;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+    />
+  );
+}
+
 function useMyLedger(offset: number) {
   return useQuery<{ entries: LedgerEntry[]; total: number }>({
     queryKey: ["my-ledger", offset],
@@ -120,8 +139,7 @@ export default function Dashboard() {
                     <div className="group rounded-lg border border-black/10 bg-white overflow-hidden hover:border-[#f97316]/40 hover:shadow-md transition-all cursor-pointer">
                       <div className="relative aspect-video bg-[#0f0f14]">
                         {thumbUrl ? (
-                          <img src={thumbUrl} alt={ad.title}
-                            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                          <AdFeedThumb src={thumbUrl} alt={ad.title} />
                         ) : (
                           <div className="absolute inset-0 gradient-bg opacity-25" />
                         )}

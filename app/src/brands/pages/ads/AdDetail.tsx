@@ -14,7 +14,7 @@ import { RadioGroup, RadioGroupItem } from "@brands/components/ui/radio-group";
 import { Label } from "@brands/components/ui/label";
 import { Textarea } from "@brands/components/ui/textarea";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from "recharts";
-import { Play, CheckCircle, CheckCircle2, TrendingUp, Star, MessageSquare, PlayCircle, Eye, AlignLeft, EyeIcon, Trash2 } from "lucide-react";
+import { Play, CheckCircle, CheckCircle2, TrendingUp, Star, MessageSquare, PlayCircle, Eye, AlignLeft, EyeIcon, Trash2, AlertCircle, RefreshCw } from "lucide-react";
 import { AISummaryButton } from "@brands/components/AISummaryPanel";
 import { UpdateAdRequestStatus, getGetBrandAdStatsQueryKey } from "@workspace/api-client-react";
 import type { AdWithQuestions } from "@workspace/api-client-react";
@@ -301,12 +301,35 @@ function StatCard({ title, value, icon: Icon }: { title: string, value: string |
   );
 }
 
+const MEDIA_MAX_RETRIES = 2;
+
 function AdPreview({ ad }: { ad: AdWithQuestions }) {
   const [watchSeconds, setWatchSeconds] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const iframeRef   = useRef<HTMLIFrameElement>(null);
+
+  // The brand's own preview of their creative had no error handling at all —
+  // a broken upload just showed a blank black box, so the brand only found
+  // out via a reviewer complaint. Mirror (a simplified version of) the
+  // status state machine + capped retry from earn/components/VideoPlayer.tsx.
+  const [mediaStatus, setMediaStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [mediaRetries, setMediaRetries] = useState(0);
+  const [mediaKey, setMediaKey] = useState(0);
+
+  useEffect(() => {
+    setMediaStatus("loading");
+    setMediaRetries(0);
+    setMediaKey(k => k + 1);
+  }, [ad.assetUrl, ad.assetType]);
+
+  const retryMedia = () => {
+    if (mediaRetries >= MEDIA_MAX_RETRIES) return;
+    setMediaRetries(r => r + 1);
+    setMediaKey(k => k + 1);
+    setMediaStatus("loading");
+  };
 
   useEffect(() => {
     if (isPlaying) {
@@ -372,18 +395,24 @@ function AdPreview({ ad }: { ad: AdWithQuestions }) {
           >
             {ad.assetType === "image" ? (
               <img
+                key={mediaKey}
                 src={ad.assetUrl}
                 alt={ad.title}
-                className="absolute inset-0 w-full h-full object-contain"
+                className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${mediaStatus === "ready" ? "opacity-100" : "opacity-0"}`}
+                onLoad={() => setMediaStatus("ready")}
+                onError={() => setMediaStatus("error")}
               />
             ) : ad.assetType === "video" ? (
               <video
+                key={mediaKey}
                 src={ad.assetUrl}
-                className="absolute inset-0 w-full h-full object-contain"
+                className={`absolute inset-0 w-full h-full object-contain transition-opacity duration-300 ${mediaStatus === "ready" ? "opacity-100" : "opacity-0"}`}
                 controls
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
                 onEnded={() => setIsPlaying(false)}
+                onCanPlay={() => setMediaStatus("ready")}
+                onError={() => setMediaStatus("error")}
               />
             ) : ad.assetType === "vimeo" ? (
               <iframe
@@ -404,6 +433,40 @@ function AdPreview({ ad }: { ad: AdWithQuestions }) {
             {ad.assetType === "image" && isPlaying && (
               <div className="absolute top-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded-full">
                 Simulating watch…
+              </div>
+            )}
+
+            {(ad.assetType === "image" || ad.assetType === "video") && mediaStatus === "loading" && (
+              <div className="absolute inset-0 bg-[#1d1d1f] flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white/80 animate-spin" />
+                  <p className="text-[12px] text-white/40">Loading creative…</p>
+                </div>
+              </div>
+            )}
+
+            {(ad.assetType === "image" || ad.assetType === "video") && mediaStatus === "error" && (
+              <div className="absolute inset-0 bg-[#1d1d1f] flex items-center justify-center">
+                <div className="text-center p-6">
+                  <div className="w-14 h-14 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle size={24} className="text-white/60" />
+                  </div>
+                  <p className="text-white font-medium text-[15px] mb-1">Couldn't load this creative</p>
+                  <p className="text-white/40 text-[13px] mb-4">
+                    {mediaRetries >= MEDIA_MAX_RETRIES
+                      ? "The file may be missing or corrupted. Try re-uploading it."
+                      : "Check the file and try again."}
+                  </p>
+                  {mediaRetries < MEDIA_MAX_RETRIES && (
+                    <button
+                      type="button"
+                      onClick={retryMedia}
+                      className="inline-flex items-center gap-2 text-white/80 hover:text-white text-[13px] font-medium border border-white/20 hover:border-white/40 px-4 py-2 rounded-full transition-all"
+                    >
+                      <RefreshCw size={13} /> Retry
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

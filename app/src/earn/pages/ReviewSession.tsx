@@ -15,6 +15,7 @@ import { CheckCircle2, AlertCircle, ArrowLeft, Star, Loader2, Gift, Zap, Copy, T
 import { VideoPlayer } from "@earn/components/VideoPlayer";
 import { Link } from "wouter";
 import { fetchAdReward, claimReward, type AdReward } from "@earn/lib/rewards";
+import { loadReviewDraft, saveReviewDraft, clearReviewDraft } from "@earn/lib/reviewDraft";
 
 function isChoiceQuestion(type: string) {
   return type === "multiple_choice" || type === "mcq" || type === "yes_no" || type === "emoji";
@@ -25,12 +26,16 @@ export default function ReviewSession() {
   const adId = params?.id;
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [watchSeconds, setWatchSeconds] = useState(0);
+  // Restore in-progress survey answers / watch time / comment if the
+  // reviewer refreshed or navigated away mid-review, so they don't have to
+  // start the ad over from zero.
+  const [initialDraft] = useState(() => loadReviewDraft(adId));
+  const [watchSeconds, setWatchSeconds] = useState(initialDraft?.watchSeconds ?? 0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [comment, setComment] = useState("");
-  const [proverbAnswer, setProverbAnswer] = useState("");
+  const [answers, setAnswers] = useState<Record<string, string>>(initialDraft?.answers ?? {});
+  const [comment, setComment] = useState(initialDraft?.comment ?? "");
+  const [proverbAnswer, setProverbAnswer] = useState(initialDraft?.proverbAnswer ?? "");
   const [isCompleted, setIsCompleted] = useState(false);
   const [earnedPoints, setEarnedPoints] = useState(0);
   const [reward, setReward] = useState<AdReward | null>(null);
@@ -62,6 +67,28 @@ export default function ReviewSession() {
     return () => clearInterval(interval);
   }, [isPlaying, isCompleted]);
 
+  // One-time notice if we picked up an in-progress review.
+  useEffect(() => {
+    if (!initialDraft) return;
+    const hadProgress =
+      initialDraft.watchSeconds > 0 ||
+      Object.keys(initialDraft.answers).length > 0 ||
+      initialDraft.comment.trim().length > 0 ||
+      initialDraft.proverbAnswer.trim().length > 0;
+    if (hadProgress) {
+      toast({ title: "Progress restored", description: "We picked up your in-progress review." });
+    }
+    // Intentionally mount-only: this is a one-time notice for the draft
+    // captured when the component first rendered.
+  }, []);
+
+  // Persist survey answers / comment / attention-check / watch time so a
+  // refresh doesn't lose an in-progress review. Cleared on submit.
+  useEffect(() => {
+    if (isCompleted) return;
+    saveReviewDraft(adId, { watchSeconds, answers, comment, proverbAnswer });
+  }, [adId, watchSeconds, answers, comment, proverbAnswer, isCompleted]);
+
   const handleAnswer = (questionId: string, value: string) =>
     setAnswers(prev => ({ ...prev, [questionId]: value }));
 
@@ -79,6 +106,7 @@ export default function ReviewSession() {
     });
     completeReviewMutation.mutate({ sessionId, data: { watchSeconds, answers: formattedAnswers, comment: comment.trim() || undefined, proverbAnswer: proverbAnswer.trim() || undefined } }, {
       onSuccess: (res) => {
+        clearReviewDraft(adId);
         setIsCompleted(true);
         setEarnedPoints(res.pointsAwarded);
       },

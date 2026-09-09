@@ -887,7 +887,7 @@ function BrandsTab() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {b.logoUrl ? (
-                        <img src={b.logoUrl} alt="" className="w-7 h-7 object-contain border border-black/[0.07]" />
+                        <img src={b.logoUrl} alt="" loading="lazy" className="w-7 h-7 object-contain border border-black/[0.07]" />
                       ) : (
                         <div className="w-7 h-7 bg-[#f3f4f6] flex items-center justify-center text-[#9ca3af]"><Building2 size={12} /></div>
                       )}

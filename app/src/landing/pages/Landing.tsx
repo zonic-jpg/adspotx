@@ -299,6 +299,7 @@ export default function Landing() {
                       <img
                         src={campaignThumb(video)}
                         alt={video.title}
+                        loading="lazy"
                         className="w-full h-full object-cover"
                       />
                       ) : (
