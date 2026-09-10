@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { LoginRequest, UserProfile } from "@workspace/api-client-react";
 import { getMe, ApiError } from "@workspace/api-client-react";
-import { supabaseLogin, supabaseSignOut, postLoginPath, hasSupabase, supabase, isOwnerEmail, isOwnerSoftSession } from "@workspace/api-client-react";
+import { supabaseLogin, supabaseSignOut, hasSupabase, supabase, isOwnerEmail, isOwnerSoftSession } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 
 interface AuthContextType {
@@ -64,7 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("WRONG_PORTAL");
     }
     setUser(res.user);
-    setLocation(postLoginPath(res.user.role, res.user.email));
+    // Nest-relative: this AuthProvider lives inside wouter's `<Route path="/earn" nest>`,
+    // so setLocation() here is scoped to that nest already. postLoginPath() returns an
+    // absolute path ("/earn/dashboard") meant for window.location.href/hard navigation —
+    // passing it to this nest-scoped setLocation double-prefixes to "/earn/earn/dashboard",
+    // which matches no route and 404s. Register.tsx already does this correctly with a bare
+    // "/dashboard"; mirror that here. (Owner/admin/super_admin already returned above via a
+    // hard navigation, so every path reaching here is a real reviewer login.)
+    setLocation("/dashboard");
   };
 
   const logout = () => {
